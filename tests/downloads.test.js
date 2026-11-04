@@ -11,6 +11,8 @@ const DRAFT_ID = '33333333-3333-4333-8333-333333333333'
 const OTHER_DRAFT_ID = '44444444-4444-4444-8444-444444444444'
 const ORDER_ID = '11111111-1111-4111-8111-111111111111'
 const OTHER_ORDER_ID = '22222222-2222-4222-8222-222222222222'
+const BUSINESS_DRAFT_ID = '55555555-5555-4555-8555-555555555555'
+const BUSINESS_ORDER_ID = '77777777-7777-4777-8777-777777777777'
 const SESSION_ID = 'cs_test_dl'
 const HTML = Buffer.from('<!doctype html><title>Meine Band</title>')
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -170,6 +172,44 @@ describe('protected order download', () => {
       assert.equal(after.body.downloadAvailable, true)
       assert.equal((await call(download, creds())).statusCode, 200)
     }
+  })
+
+  it('uses the same paid-status and protected download flow for Business', async () => {
+    const businessAccess = generateAccessToken()
+    db.builders.push({ id: 'b2', slug: 'business', name: 'Business', active: true })
+    db.drafts.push({
+      id: BUSINESS_DRAFT_ID,
+      builder_id: 'b2',
+      status: 'draft',
+      access_token_hash: businessAccess.hash,
+    })
+    const businessSnapshotKey = `orders/${BUSINESS_ORDER_ID}/snapshot`
+    db.orders.push(orderRow(BUSINESS_ORDER_ID, BUSINESS_DRAFT_ID, {
+      package_code: 'business-pure-code',
+      amount_cents: 29900,
+      snapshot_key: businessSnapshotKey,
+      status: 'pending',
+    }))
+    storage.objects.set(businessSnapshotKey, { body: HTML, contentType: 'text/html' })
+    const businessCredentials = { draftId: BUSINESS_DRAFT_ID, draftToken: businessAccess.token }
+
+    const pending = await call(status, businessCredentials)
+    assert.equal(pending.body.status, 'pending')
+    assert.equal(pending.body.downloadAvailable, false)
+    assert.equal((await call(download, businessCredentials)).statusCode, 402)
+
+    db.orders.at(-1).status = 'paid'
+    db.orders.at(-1).paid_at = new Date()
+    const paid = await call(status, businessCredentials)
+    assert.equal(paid.body.status, 'paid')
+    assert.equal(paid.body.downloadAvailable, true)
+    assert.equal(paid.body.package.name, 'Pure Code')
+
+    const file = await call(download, businessCredentials)
+    assert.equal(file.statusCode, 200)
+    assert.equal(file.headers['Content-Disposition'], 'attachment; filename="website.html"')
+    assert.deepEqual(file.body, HTML)
+    assert.equal((await call(download, { ...businessCredentials, draftToken: otherToken })).statusCode, 404)
   })
 
   it('status exposes no keys, hashes or tokens and describes the package', async () => {

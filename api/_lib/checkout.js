@@ -148,6 +148,13 @@ function describeContent({ body, contentType }) {
   }
 }
 
+function orderCompleteUrl(siteUrl, checkout, builderSlug) {
+  const url = new URL('/order/complete', `${siteUrl}/`)
+  url.searchParams.set('checkout', checkout)
+  url.searchParams.set('builder', builderSlug)
+  return url.toString()
+}
+
 // The purchasable content: the website HTML generated on the server from the validated draft data. The draft
 // is read once; validation, generation and hashing all work on that single copy, so a concurrent save cannot
 // slip in between. Browser-supplied HTML is never used.
@@ -162,7 +169,23 @@ async function readDraftContent({ storage, draft, generators, year }) {
     throw new CheckoutError(409, 'This draft has no saved content yet')
   }
 
+  let data
+  try {
+    data = JSON.parse(object.body.toString('utf8'))
+  } catch {
+    throw new CheckoutError(409, 'The saved draft content is invalid')
+  }
+
   const html = renderWebsite(generators, draft.builder_slug, object.body, year)
+
+  if (draft.builder_slug === 'business') {
+    if (!data.company?.name?.trim()) {
+      throw new CheckoutError(422, 'Business company name is required')
+    }
+    if (!data.contact?.email?.trim()) {
+      throw new CheckoutError(422, 'Business contact email is required')
+    }
+  }
 
   return describeContent({ body: html, contentType: 'text/html' })
 }
@@ -267,8 +290,8 @@ async function ensureSession({ sql, stripe, siteUrl, draft, pkg }, order) {
           },
         ],
         metadata: { order_id: order.id },
-        success_url: `${siteUrl}/order/complete?checkout=success`,
-        cancel_url: `${siteUrl}/order/complete?checkout=cancelled`,
+        success_url: orderCompleteUrl(siteUrl, 'success', draft.builder_slug),
+        cancel_url: orderCompleteUrl(siteUrl, 'cancelled', draft.builder_slug),
       },
       { idempotencyKey: `leanwebsite-checkout-${order.id}` },
     ),

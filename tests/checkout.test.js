@@ -4,12 +4,15 @@ import { beforeEach, describe, it } from 'node:test'
 import { createCheckoutHandler } from '../api/checkout.js'
 import { getSiteUrl } from '../api/_lib/checkout.js'
 import { packages } from '../api/_lib/packages.js'
+import { defaultGenerators } from '../api/_lib/generators.js'
 import { generateAccessToken } from '../api/_lib/tokens.js'
 import { saveDraftContent } from '../api/_lib/drafts.js'
 import { buildRequest, buildResponse, createFakeDb, createTestGenerators, htmlFor, createFakeStorage, createFakeStripe } from './helpers/fakes.js'
 
 const DRAFT_ID = '33333333-3333-4333-8333-333333333333'
 const OTHER_DRAFT_ID = '44444444-4444-4444-8444-444444444444'
+const BUSINESS_DRAFT_ID = '55555555-5555-4555-8555-555555555555'
+const OTHER_BUSINESS_DRAFT_ID = '66666666-6666-4666-8666-666666666666'
 const SITE_URL = 'https://leanwebsite.example'
 const DRAFT_KEY = `drafts/${DRAFT_ID}/content`
 const CONTENT_V1 = Buffer.from('{"pages":["home"]}')
@@ -44,6 +47,28 @@ describe('POST /api/checkout', () => {
   const noWrites = () => {
     assert.equal(db.orders.length, 0)
     assert.equal(stripe.createCalls, 0)
+  }
+
+  const addBusinessDraft = (draftId, data) => {
+    let builder = db.builders.find((item) => item.slug === 'business')
+    if (!builder) {
+      builder = { id: 'b2', slug: 'business', name: 'Business', active: true }
+      db.builders.push(builder)
+    }
+    const access = generateAccessToken()
+    const storageKey = `drafts/${draftId}/content`
+    db.drafts.push({
+      id: draftId,
+      builder_id: builder.id,
+      status: 'draft',
+      access_token_hash: access.hash,
+      storage_key: storageKey,
+    })
+    storage.objects.set(storageKey, {
+      body: Buffer.from(JSON.stringify(data)),
+      contentType: 'application/json',
+    })
+    return access.token
   }
 
   beforeEach(() => {
@@ -91,8 +116,9 @@ describe('POST /api/checkout', () => {
       assert.equal(params.line_items[0].price_data.unit_amount, 24900)
       assert.equal(params.line_items[0].quantity, 1)
       assert.equal('automatic_tax' in params, false)
-      assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success`)
-      assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled`)
+      assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success&builder=artist-band`)
+      assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled&builder=artist-band`)
+      assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, /draftId|draftToken|33333333/)
       assert.match(options.idempotencyKey, new RegExp(order.id))
     })
 
@@ -106,6 +132,89 @@ describe('POST /api/checkout', () => {
       await send(validBody())
       assert.equal(db.orders[0].status, 'pending')
       assert.equal(db.drafts[0].status, 'draft')
+    })
+  })
+
+  describe('Business checkout', () => {
+    const validBusinessData = {
+      company: { name: 'Musterbetrieb' },
+      contact: { email: 'hallo@example.de' },
+    }
+
+    beforeEach(() => {
+      handler = createCheckoutHandler({
+        getDb: () => db,
+        getStripeClient: () => stripe,
+        resolveSiteUrl: () => SITE_URL,
+        storage,
+        generators: defaultGenerators,
+      })
+    })
+
+    it('uses the shared Business package definitions for both offers', async () => {
+      const entries = [
+        ['business-pure-code', BUSINESS_DRAFT_ID],
+        ['business-rundum-sorglos', OTHER_BUSINESS_DRAFT_ID],
+      ]
+
+      for (const [packageCode, draftId] of entries) {
+        const draftToken = addBusinessDraft(draftId, validBusinessData)
+        const res = await send({
+          builder: 'business',
+          package: packageCode,
+          draftId,
+          draftToken,
+        })
+
+        assert.equal(res.statusCode, 200)
+        const pkg = packages[packageCode]
+        const order = db.orders.find((item) => item.draft_id === draftId)
+        assert.equal(pkg.builderSlug, 'business')
+        assert.equal(order.package_code, pkg.code)
+        assert.equal(order.amount_cents, pkg.amountCents)
+        const params = stripe.sessions.get(order.stripe_checkout_session_id).params
+        assert.equal(params.line_items[0].price_data.unit_amount, pkg.amountCents)
+        assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success&builder=business`)
+        assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled&builder=business`)
+        assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, new RegExp(draftToken))
+        assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, new RegExp(draftId))
+      }
+    })
+
+    it('rejects missing company name or contact email before creating an order or Stripe session', async () => {
+      const invalidDrafts = [
+        { id: BUSINESS_DRAFT_ID, data: { company: { name: '   ' }, contact: { email: 'hallo@example.de' } }, message: 'Business company name is required' },
+        { id: OTHER_BUSINESS_DRAFT_ID, data: { company: { name: 'Musterbetrieb' }, contact: { email: '' } }, message: 'Business contact email is required' },
+      ]
+
+      for (const item of invalidDrafts) {
+        const draftToken = addBusinessDraft(item.id, item.data)
+        const res = await send({
+          builder: 'business',
+          package: 'business-pure-code',
+          draftId: item.id,
+          draftToken,
+        })
+        assert.equal(res.statusCode, 422)
+        assert.equal(res.body.error, item.message)
+      }
+      noWrites()
+    })
+
+    it('rejects an invalid stored contact email without creating an order or Stripe session', async () => {
+      const draftToken = addBusinessDraft(BUSINESS_DRAFT_ID, {
+        company: { name: 'Musterbetrieb' },
+        contact: { email: 'not-an-email' },
+      })
+      const res = await send({
+        builder: 'business',
+        package: 'business-pure-code',
+        draftId: BUSINESS_DRAFT_ID,
+        draftToken,
+      })
+
+      assert.equal(res.statusCode, 409)
+      noWrites()
     })
   })
 

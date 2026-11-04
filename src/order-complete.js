@@ -1,14 +1,43 @@
-const STORAGE_KEY = 'leanwebsite-artist-band-draft-v1'
 const POLL_INTERVAL_MS = 4000
 const MAX_POLLS = 45
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TOKEN = /^[A-Za-z0-9_-]{43}$/
 
-function readCredentials() {
+const BUILDER_CONTEXTS = Object.freeze({
+  'artist-band': Object.freeze({
+    storageKey: 'leanwebsite-artist-band-draft-v1',
+    path: '/builder/artist-band',
+  }),
+  business: Object.freeze({
+    storageKey: 'leanwebsite-business-draft-reference-v1',
+    path: '/builder/business',
+  }),
+})
+
+export function resolveOrderCompleteContext(search) {
+  const params = new URLSearchParams(search)
+  const requestedBuilder = params.get('builder')
+  const builder = requestedBuilder === null ? 'artist-band' : requestedBuilder
+  const context = Object.hasOwn(BUILDER_CONTEXTS, builder) ? BUILDER_CONTEXTS[builder] : null
+
+  return {
+    builder,
+    context,
+    returnedCancelled: params.get('checkout') === 'cancelled',
+  }
+}
+
+function readCredentials(storageKey) {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
-    return value && UUID.test(value.draftId) && TOKEN.test(value.draftToken) ? value : null
+    const value = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
+    return value
+      && typeof value === 'object'
+      && !Array.isArray(value)
+      && UUID.test(value.draftId)
+      && TOKEN.test(value.draftToken)
+      ? value
+      : null
   } catch {
     return null
   }
@@ -25,8 +54,9 @@ async function postJson(url, credentials) {
 }
 
 export function renderOrderComplete(app) {
-  // The return parameter is only a hint for the wording. It never grants anything.
-  const returnedCancelled = new URLSearchParams(window.location.search).get('checkout') === 'cancelled'
+  // The builder parameter selects local context only; the credentials authorize each API request.
+  const { context, returnedCancelled } = resolveOrderCompleteContext(window.location.search)
+  const builderPath = context?.path ?? '/'
 
   app.innerHTML = `
     <div class="ab-page">
@@ -34,7 +64,7 @@ export function renderOrderComplete(app) {
         <a class="ab-brand" href="/" aria-label="Zur LeanWebsite-Startseite">
           <span class="ab-brand-mark" aria-hidden="true">L</span><span>LeanWebsite</span>
         </a>
-        <a class="ab-back" href="/builder/artist-band">Zum Builder <span aria-hidden="true">↗</span></a>
+        <a class="ab-back" href="${builderPath}">${context ? 'Zum Builder' : 'Zur Startseite'} <span aria-hidden="true">↗</span></a>
       </header>
       <main class="ab-main">
         <section class="ab-card oc-card" aria-labelledby="oc-title" aria-live="polite">
@@ -44,7 +74,7 @@ export function renderOrderComplete(app) {
           <div class="oc-actions">
             <button id="oc-download" class="ab-checkout-button" type="button" hidden>Website herunterladen <span aria-hidden="true">↓</span></button>
             <button id="oc-refresh" class="ab-text-button" type="button" hidden>Status erneut prüfen</button>
-            <a id="oc-builder" class="ab-text-button" href="/builder/artist-band" hidden>Zurück zum Builder</a>
+            <a id="oc-builder" class="ab-text-button" href="${builderPath}" hidden>${context ? 'Zurück zum Builder' : 'Zur LeanWebsite-Startseite'}</a>
           </div>
         </section>
       </main>
@@ -171,10 +201,18 @@ export function renderOrderComplete(app) {
     check()
   })
 
-  credentials = readCredentials()
+  if (!context) {
+    show('Der Builder-Hinweis in dieser Rücksprung-URL ist unbekannt. Bitte öffne den passenden Builder erneut.', 'error')
+    builderLink.href = '/'
+    builderLink.textContent = 'Zur LeanWebsite-Startseite'
+    builderLink.hidden = false
+    return
+  }
+
+  credentials = readCredentials(context.storageKey)
 
   if (!credentials) {
-    show('In diesem Browser sind keine Bestelldaten gespeichert. Bitte öffne die Seite im selben Browser, in dem du bestellt hast.', 'error')
+    show('In diesem Browser fehlen gültige Bestelldaten. Öffne die Seite bitte im Browser, in dem du bestellt hast; gelöschte oder fehlende Zugangsdaten können hier nicht wiederhergestellt werden.', 'error')
     builderLink.hidden = false
     return
   }

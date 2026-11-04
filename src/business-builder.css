@@ -354,6 +354,91 @@
   resize: vertical;
 }
 
+#app.business-builder .step [aria-invalid='true'] {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.16);
+}
+
+#app.business-builder .business-purchase {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+#app.business-builder .business-purchase h3 {
+  margin: 0.8em 0 0.35em;
+  font-size: 1.15rem;
+}
+
+#app.business-builder .package-options {
+  display: grid;
+  gap: 9px;
+  margin: 14px 0;
+}
+
+#app.business-builder .package-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 !important;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 13px;
+  background: var(--surface);
+  color: var(--text) !important;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+#app.business-builder .package-option:has(input:checked) {
+  border-color: var(--a);
+  background: color-mix(in srgb, var(--a) 12%, var(--surface));
+}
+
+#app.business-builder .package-option input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--a);
+}
+
+#app.business-builder .package-option-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+#app.business-builder .package-option-copy > span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+#app.business-builder .package-option-price {
+  white-space: nowrap;
+}
+
+#app.business-builder #business-checkout {
+  width: 100%;
+}
+
+#app.business-builder .checkout-status {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+#app.business-builder .checkout-status[data-state='error'] {
+  color: #fca5a5;
+}
+
+#app.business-builder .checkout-status[data-state='pending'] {
+  color: #67e8f9;
+}
+
 #app.business-builder .row {
   display: grid;
   grid-template-columns: 1fr 1fr;

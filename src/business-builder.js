@@ -1,4 +1,5 @@
 import { generateBusinessHtml } from '../shared/business-template.js'
+import { getPackagesForBuilder } from '../shared/packages.js'
 import './business-builder.css'
 
 const STORAGE_KEY = 'leanwebsite-business-builder-v1'
@@ -153,6 +154,8 @@ function apiErrorMessage(message, status) {
     'Invalid design options': 'Bitte wähle gültige Designoptionen aus.',
     'Invalid email address': 'Bitte gib eine gültige E-Mail-Adresse ein.',
     'Invalid URL': 'Instagram muss eine gültige HTTP- oder HTTPS-Adresse ohne Zugangsdaten sein.',
+    'Business company name is required': 'Bitte gib vor dem Kauf den Firmennamen ein.',
+    'Business contact email is required': 'Bitte gib vor dem Kauf eine gültige E-Mail-Adresse ein.',
   }
   if (known[message]) return known[message]
   if (status === 401) return 'Der Zugriffstoken fehlt oder ist ungültig. Der gespeicherte Entwurf wurde nicht ersetzt.'
@@ -542,6 +545,13 @@ export function renderBusinessBuilder(app) {
               <div class="finish">
                 <p class="hint">Deine Eingaben bleiben lokal gesichert. Mit „Serverentwurf speichern“ werden sie online gespeichert; weitere Änderungen werden danach automatisch übernommen.</p>
               </div>
+              <section class="business-purchase" aria-labelledby="business-purchase-title">
+                <h3 id="business-purchase-title">Deine Website kaufen</h3>
+                <p class="hint">Wähle ein Paket. Vor dem Checkout müssen Firmenname und E-Mail-Adresse angegeben sein.</p>
+                <div class="package-options" id="business-packages" role="radiogroup" aria-label="Website-Paket"></div>
+                <button class="btn primary big" id="business-checkout" type="button">Weiter zum sicheren Checkout <span aria-hidden="true">→</span></button>
+                <p class="checkout-status" id="business-checkout-status" role="status" aria-live="polite"></p>
+              </section>
             </div>
           </div>
 
@@ -594,6 +604,10 @@ export function renderBusinessBuilder(app) {
   const useLocalButton = $('#use-local-draft')
   const useServerButton = $('#use-server-draft')
   const discardInvalidLocalButton = $('#discard-invalid-local')
+  const packageBox = $('#business-packages')
+  const checkoutButton = $('#business-checkout')
+  const checkoutStatus = $('#business-checkout-status')
+  const packages = getPackagesForBuilder('business')
   let localDataExists = localState.exists
   let localDataInvalid = localState.invalid
   let preserveLocalRaw = localState.invalid
@@ -609,6 +623,8 @@ export function renderBusinessBuilder(app) {
   let previewTimer
   let toastTimer
   let autoSaveTimer
+  let checkoutPending = false
+  const imageTasks = new Set()
   let storageWarningShown = false
   let preservedDataWarningShown = false
 
@@ -668,11 +684,68 @@ export function renderBusinessBuilder(app) {
 
   function updateSaveControls() {
     saveButton.disabled = Boolean(savePromise) || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
+    checkoutButton.disabled = checkoutPending || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
     retryButton.hidden = !referenceError
     restartButton.hidden = !referenceError && serverStatus !== 'locked'
     if (!draft) saveButton.textContent = 'Serverentwurf speichern'
     else saveButton.textContent = serverStatus === 'locked' ? 'Entwurf gesperrt' : 'Jetzt speichern'
   }
+
+  function setCheckoutStatus(message, kind = '') {
+    checkoutStatus.textContent = message
+    checkoutStatus.dataset.state = kind
+  }
+
+  function trackImageTask(task) {
+    const tracked = Promise.resolve(task).finally(() => imageTasks.delete(tracked))
+    imageTasks.add(tracked)
+    return tracked
+  }
+
+  function validatePurchase() {
+    const name = state.company.name.trim()
+    const email = state.contact.email.trim()
+    if (!name) return { path: 'company.name', message: 'Bitte gib vor dem Kauf den Firmennamen ein.' }
+    if (!email || !isValidEmail(state.contact.email)) {
+      return { path: 'contact.email', message: 'Bitte gib vor dem Kauf eine gültige E-Mail-Adresse ein.' }
+    }
+    return null
+  }
+
+  function showPurchaseError({ path, message }) {
+    const field = $(`[data-bind="${path}"]`)
+    const step = field.closest('.step')
+    const stepIndex = stepElements.indexOf(step)
+    if (stepIndex >= 0) go(stepIndex)
+    field.setAttribute('aria-invalid', 'true')
+    field.focus()
+    setCheckoutStatus(message, 'error')
+  }
+
+  function clearPurchaseError(element) {
+    if (!element.matches('[data-bind="company.name"], [data-bind="contact.email"]')) return
+    const error = validatePurchase()
+    for (const selector of ['[data-bind="company.name"]', '[data-bind="contact.email"]']) {
+      $(selector).removeAttribute('aria-invalid')
+    }
+    if (error) {
+      $(`[data-bind="${error.path}"]`).setAttribute('aria-invalid', 'true')
+      setCheckoutStatus(error.message, 'error')
+    } else {
+      setCheckoutStatus('')
+    }
+  }
+
+  packageBox.innerHTML = packages.map((item, index) => `
+    <label class="package-option">
+      <input type="radio" name="business-package" value="${item.code}" ${index === 0 ? 'checked' : ''}>
+      <span class="package-option-copy">
+        <strong>${item.name}</strong>
+        <span>Deine Website als HTML-Datei. Der Leistungsumfang richtet sich nach dem gewählten Paket.</span>
+      </span>
+      <strong class="package-option-price">${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(item.amountCents / 100)}</strong>
+    </label>
+  `).join('')
 
   function persistDraftReference(reference) {
     try {
@@ -1181,7 +1254,9 @@ export function renderBusinessBuilder(app) {
       if (!file) return
       try {
         const path = box.dataset.img
-        const value = await processImage(file, Number(box.dataset.max) || 1400, path === 'logo', state, path)
+        const value = await trackImageTask(
+          processImage(file, Number(box.dataset.max) || 1400, path === 'logo', state, path),
+        )
         setValue(path, value)
         renderSingle(box)
         changed()
@@ -1226,8 +1301,8 @@ export function renderBusinessBuilder(app) {
       return
     }
 
-    const gallery = [...state.gallery]
-    try {
+    const task = (async () => {
+      const gallery = [...state.gallery]
       for (const file of files) {
         const candidate = { ...state, gallery }
         const value = await processImage(file, 1400, false, candidate, `gallery.${gallery.length}`)
@@ -1236,6 +1311,9 @@ export function renderBusinessBuilder(app) {
       state.gallery = gallery
       renderGallery()
       changed()
+    })()
+    try {
+      await trackImageTask(task)
     } catch (error) {
       toast(error.message)
     }
@@ -1336,6 +1414,7 @@ export function renderBusinessBuilder(app) {
           return
         }
         setValue(path, element.value)
+        clearPurchaseError(element)
         changed()
       }
       element.onblur = () => {
@@ -1418,6 +1497,74 @@ export function renderBusinessBuilder(app) {
   saveButton.addEventListener('click', () => {
     clearTimeout(autoSaveTimer)
     saveLatest().catch(() => {})
+  })
+  checkoutButton.addEventListener('click', async () => {
+    if (checkoutPending) return
+
+    const selectedPackage = packageBox.querySelector('input[name="business-package"]:checked')?.value
+    if (!packages.some((item) => item.code === selectedPackage)) {
+      setCheckoutStatus('Bitte wähle ein verfügbares Website-Paket aus.', 'error')
+      return
+    }
+
+    const purchaseError = validatePurchase()
+    if (purchaseError) {
+      showPurchaseError(purchaseError)
+      return
+    }
+
+    checkoutPending = true
+    clearTimeout(autoSaveTimer)
+    setEditorDisabled(true)
+    updateSaveControls()
+    setCheckoutStatus('Deine Änderungen werden gespeichert. Danach öffnet sich der sichere Checkout …', 'pending')
+
+    try {
+      while (imageTasks.size) await Promise.all([...imageTasks])
+
+      const currentError = validatePurchase()
+      if (currentError) {
+        showPurchaseError(currentError)
+        throw new Error(currentError.message)
+      }
+
+      while (savedRevision < revision) await saveLatest()
+      if (savedRevision !== revision) {
+        throw new Error('Der aktuelle Entwurfsstand konnte nicht bestätigt werden. Bitte speichere erneut.')
+      }
+
+      const reference = draft
+      if (!isDraftReference(reference)) {
+        throw new Error('Die Serverreferenz für diesen Entwurf ist nicht verfügbar. Bitte lade den Entwurf erneut.')
+      }
+
+      const checkout = await requestJson('/api/checkout', {
+        method: 'POST',
+        body: {
+          builder: 'business',
+          package: selectedPackage,
+          draftId: reference.draftId,
+          draftToken: reference.draftToken,
+        },
+      })
+
+      let checkoutUrl
+      try {
+        checkoutUrl = new URL(checkout.url)
+      } catch {
+        throw new Error('Der Checkout hat keine gültige Zieladresse zurückgegeben.')
+      }
+      if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.stripe.com') {
+        throw new Error('Der Checkout hat eine nicht erlaubte Zieladresse zurückgegeben.')
+      }
+
+      window.location.assign(checkoutUrl.href)
+    } catch (error) {
+      checkoutPending = false
+      setEditorDisabled(false)
+      updateSaveControls()
+      setCheckoutStatus(error.message, 'error')
+    }
   })
   retryButton.addEventListener('click', () => {
     retryButton.disabled = true
