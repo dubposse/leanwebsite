@@ -15,6 +15,6 @@ export const builders = [
     description: 'Eine klare Website, die zeigt, was du anbietest und wie man dich erreicht.',
     audience: 'Selbstständige & Kleinunternehmen',
     icon: '↗',
-    url: null,
+    url: '/builder/business',
   },
 ]

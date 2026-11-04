@@ -1,12 +1,15 @@
 import './style.css'
 import { builders } from './data/builders.js'
 import { renderArtistBandBuilder } from './artist-band-builder.js'
+import { renderBusinessBuilder } from './business-builder.js'
 import { renderOrderComplete } from './order-complete.js'
 
 const app = document.querySelector('#app')
 
 if (window.location.pathname.replace(/\/$/, '') === '/builder/artist-band') {
   renderArtistBandBuilder(app)
+} else if (window.location.pathname.replace(/\/$/, '') === '/builder/business') {
+  renderBusinessBuilder(app)
 } else if (window.location.pathname.replace(/\/$/, '') === '/order/complete') {
   renderOrderComplete(app)
 } else {

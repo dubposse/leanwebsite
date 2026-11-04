@@ -1,5 +1,6 @@
 import { HttpError } from './http.js'
 import { createArtistBandGenerator } from './artist-band.js'
+import { createBusinessGenerator } from './business.js'
 
 // Internal builder interface. Every builder brings its OWN data model, validator and HTML generator:
 //
@@ -21,6 +22,7 @@ export class BuilderValidationError extends HttpError {
 
 export const defaultGenerators = Object.freeze({
   'artist-band': createArtistBandGenerator({ BuilderValidationError, escapeHtml }),
+  business: createBusinessGenerator({ BuilderValidationError, maxImageBytes: MAX_IMAGE_BYTES }),
 })
 
 export function getGenerator(generators, slug) {

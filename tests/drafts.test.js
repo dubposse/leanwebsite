@@ -3,7 +3,7 @@ import { beforeEach, describe, it } from 'node:test'
 import { createCheckoutHandler } from '../api/checkout.js'
 import { createDraftsHandler } from '../api/drafts/index.js'
 import { createDraftHandler, MAX_BODY_BYTES } from '../api/drafts/[id].js'
-import { validateImageDataUrl } from '../api/_lib/generators.js'
+import { defaultGenerators, validateImageDataUrl } from '../api/_lib/generators.js'
 import { hashToken } from '../api/_lib/tokens.js'
 import {
   buildRequest,
@@ -103,6 +103,39 @@ describe('draft API', () => {
     it('returns data null for a draft without content', async () => {
       const { draftId, draftToken } = await createDraftOk()
       assert.equal((await get(draftId, draftToken)).body.data, null)
+    })
+
+    it('saves incomplete and complete Business data through the existing draft API', async () => {
+      const { draftId, draftToken } = await createDraftOk('business')
+      const businessDraft = createDraftHandler({ getDb: () => db, storage, generators: defaultGenerators })
+      const callBusiness = (body, method = 'PUT') =>
+        call(businessDraft, body, { method, headers: auth(draftToken), query: { id: draftId } })
+
+      const incomplete = await callBusiness({ builder: 'business', data: {} })
+      assert.equal(incomplete.statusCode, 200)
+      const emptyLoaded = await callBusiness('', 'GET')
+      assert.equal(emptyLoaded.statusCode, 200)
+      assert.equal(emptyLoaded.body.data.company.name, '')
+      assert.equal(emptyLoaded.body.data.design.mode, 'dark')
+
+      const data = {
+        company: { name: 'Beispielbetrieb', tagline: 'Seit 1998', industry: 'Handwerk' },
+        logo: '',
+        hero: { headline: 'Gute Arbeit', sub: 'Für alle.', cta: 'Kontakt', badge: '', image: '' },
+        services: [{ icon: '🔧', title: 'Reparatur', text: 'Schnell und zuverlässig.' }],
+        about: { title: 'Über uns', text: 'Ein Familienbetrieb.', image: '' },
+        facts: [{ value: '25', label: 'Jahre Erfahrung' }],
+        gallery: [],
+        contact: { email: 'hallo@example.de', phone: '+49 30 1234567', address: 'Berlin', hours: 'Mo-Fr', instagram: '' },
+        design: { accent: '#8b5cf6', accent2: '#22d3ee', mode: 'light', radius: '28' },
+        legal: { owner: 'Max Mustermann', vat: 'DE123456789', domain: 'example.de', notes: 'Rückruf erwünscht.' },
+      }
+
+      const saved = await callBusiness({ builder: 'business', data })
+      assert.equal(saved.statusCode, 200)
+      const loaded = await callBusiness('', 'GET')
+      assert.equal(loaded.statusCode, 200)
+      assert.deepEqual(loaded.body.data, data)
     })
 
     it('requires a valid token for both methods and treats foreign drafts like unknown ones', async () => {

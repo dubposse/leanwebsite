@@ -9,6 +9,7 @@ import {
   validateBuilderData,
 } from '../api/_lib/generators.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
+import { generateBusinessHtml } from '../shared/business-template.js'
 import { createFakeDb, createFakeStorage, createFakeStripe } from './helpers/fakes.js'
 
 const MALFORMED_JPEG_BASE64 =
@@ -17,6 +18,8 @@ const MALFORMED_JPEG_BASE64 =
 const JPEG_BASE64 = jpeg
   .encode({ data: Uint8Array.from([255, 0, 0, 255]), width: 1, height: 1 }, 80)
   .data.toString('base64')
+const WEBP_DATA_URL =
+  'data:image/webp;base64,UklGRgYCAABXRUJQVlA4WAoAAAAgAAAAAAAAAAAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZWUDggGAAAADABAJ0BKgEAAQABQCYlpAADcAD+/PQAAA=='
 
 function artistData(overrides = {}) {
   return {
@@ -39,12 +42,123 @@ function artistData(overrides = {}) {
 }
 
 const validate = (data) => validateBuilderData(defaultGenerators, 'artist-band', data).data
+const validateBusiness = (data) => validateBuilderData(defaultGenerators, 'business', data).data
 
-describe('artist-band generator', () => {
+function businessData(overrides = {}) {
+  return {
+    company: { name: 'Nordlicht Studio', tagline: 'Gute Ideen, klar umgesetzt.', industry: 'Design' },
+    logo: '',
+    hero: { headline: 'Wir gestalten Zukunft.', sub: 'Für Menschen und Unternehmen.', cta: 'Anfragen', badge: 'Seit 2012', image: '' },
+    services: [{ icon: '✨', title: 'Strategie', text: 'Marken mit Charakter.' }],
+    about: { title: 'Über uns', text: 'Ein kleines, erfahrenes Team.', image: '' },
+    facts: [{ value: '12+', label: 'Jahre Erfahrung' }],
+    gallery: [],
+    contact: { email: 'hallo@example.com', phone: '+49 30 123456', address: 'Berlin', hours: 'Mo–Fr', instagram: 'https://instagram.com/nordlicht' },
+    design: { accent: '#8b5cf6', accent2: '#22d3ee', mode: 'dark', radius: '16' },
+    legal: { owner: 'Mara Beispiel', vat: 'DE123456789', domain: 'www.example.com', notes: 'Bitte barrierearm.' },
+    ...overrides,
+  }
+}
+
+describe('builder generators', () => {
   it('is registered and validates the real artist and band data model', () => {
     assert.ok(defaultGenerators['artist-band'])
     assert.deepEqual(validate(artistData()), artistData())
     assert.deepEqual(validate(artistData({ spotify: 'https://open.spotify.com/artist/example' })).spotify, 'https://open.spotify.com/artist/example')
+  })
+
+  describe('business generator', () => {
+    it('is registered and allows saving an incomplete draft with default values', () => {
+      assert.ok(defaultGenerators.business)
+      assert.deepEqual(validateBusiness({}), {
+        company: { name: '', tagline: '', industry: '' },
+        logo: '',
+        hero: { headline: '', sub: '', cta: '', badge: '', image: '' },
+        services: [{ icon: '🚀', title: '', text: '' }],
+        about: { title: '', text: '', image: '' },
+        facts: [],
+        gallery: [],
+        contact: { email: '', phone: '', address: '', hours: '', instagram: '' },
+        design: { accent: '#8b5cf6', accent2: '#22d3ee', mode: 'dark', radius: '16' },
+        legal: { owner: '', vat: '', domain: '', notes: '' },
+      })
+      assert.equal(validateBusiness({ company: { name: 'Teilweise' } }).company.name, 'Teilweise')
+    })
+
+    it('preserves every valid business field, including optional and not-yet-rendered values', () => {
+      const image = `data:image/jpeg;base64,${JPEG_BASE64}`
+      const data = businessData({
+        logo: image,
+        hero: { ...businessData().hero, image },
+        about: { ...businessData().about, image },
+        services: Array.from({ length: 8 }, (_, index) => ({ icon: '🚀', title: `Service ${index}`, text: 'Beschreibung' })),
+        facts: Array.from({ length: 4 }, (_, index) => ({ value: `${index}+`, label: `Fakt ${index}` })),
+        gallery: [image, image, image],
+      })
+
+      assert.deepEqual(validateBusiness(data), data)
+    })
+
+    it('accepts three gallery images and rejects a fourth without truncating data', () => {
+      const image = `data:image/jpeg;base64,${JPEG_BASE64}`
+      assert.equal(validateBusiness(businessData({ gallery: [image, image, image] })).gallery.length, 3)
+      assert.throws(() => validateBusiness(businessData({ gallery: [image, image, image, image] })), { statusCode: 422 })
+      assert.equal(generateBusinessHtml(businessData({ gallery: [image, image, image, image] })).match(/class="rv" src="data:image\/jpeg/g).length, 4)
+    })
+
+    it('accepts WebP data URLs produced by the browser canvas image processor', () => {
+      assert.equal(validateBusiness(businessData({ logo: WEBP_DATA_URL })).logo, WEBP_DATA_URL)
+    })
+
+    it('rejects invalid images, design options, lengths, and array bounds', () => {
+      for (const data of [
+        businessData({ logo: 'https://example.com/logo.jpg' }),
+        businessData({ logo: 'data:image/svg+xml;base64,PHN2Zz4=' }),
+        businessData({ logo: 'data:image/jpeg;base64,AAAA' }),
+        businessData({ logo: `data:image/jpeg;base64,${MALFORMED_JPEG_BASE64}` }),
+        businessData({ design: { ...businessData().design, accent: 'red' } }),
+        businessData({ design: { ...businessData().design, mode: 'system' } }),
+        businessData({ design: { ...businessData().design, radius: '12' } }),
+        businessData({ company: { name: 'x'.repeat(101), tagline: '', industry: '' } }),
+        businessData({ company: { ...businessData().company, tagline: 'x'.repeat(181) } }),
+        businessData({ services: Array.from({ length: 9 }, () => ({ icon: '', title: '', text: '' })) }),
+        businessData({ services: [{ icon: '', title: '', text: 'x'.repeat(1001) }] }),
+        businessData({ facts: Array.from({ length: 5 }, () => ({ value: '', label: '' })) }),
+        businessData({ gallery: ['data:image/webp;base64,AAAA'] }),
+        businessData({ contact: { ...businessData().contact, email: 'invalid' } }),
+        businessData({ contact: { ...businessData().contact, instagram: 'javascript:alert(1)' } }),
+        businessData({ company: { name: 'x', tagline: '', industry: '', extra: 'unexpected' } }),
+      ]) {
+        assert.throws(() => validateBusiness(data), { statusCode: 422 })
+      }
+    })
+
+    it('rejects aggregate image data that exceeds the existing 4 MiB draft request limit', () => {
+      const comment = Buffer.alloc(65537)
+      comment.writeUInt16BE(0xfffe, 0)
+      comment.writeUInt16BE(0xffff, 2)
+      const jpegWithComments = Buffer.concat([
+        Buffer.from(JPEG_BASE64, 'base64').subarray(0, 2),
+        ...Array.from({ length: 22 }, () => comment),
+        Buffer.from(JPEG_BASE64, 'base64').subarray(2),
+      ])
+      const image = `data:image/jpeg;base64,${jpegWithComments.toString('base64')}`
+      assert.ok(Buffer.byteLength(image) < 2 * 1024 * 1024)
+      assert.throws(() => validateBusiness(businessData({ logo: image, gallery: [image, image] })), { statusCode: 422 })
+    })
+
+    it('generates complete website HTML through the registered server renderer', () => {
+      const data = businessData()
+      const html = renderWebsite(defaultGenerators, 'business', Buffer.from(JSON.stringify(data)), 2042).toString()
+
+      assert.equal(html, generateBusinessHtml(data))
+      assert.match(html, /^<!DOCTYPE html>/)
+      assert.match(html, /@keyframes shine/)
+      assert.match(html, /id="lb"/)
+      assert.match(html, /IntersectionObserver/)
+      assert.match(html, /<strong>Impressum<\/strong>/)
+      assert.match(html, /Nordlicht Studio/)
+    })
   })
 
   it('rejects invalid types, themes, colors, URLs, emails, rows and lengths', () => {
