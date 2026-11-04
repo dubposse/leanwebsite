@@ -135,4 +135,4 @@ Keine neue Migration: Die Berechtigung nutzt die vorhandenen Draft-Zugangsdaten 
 - `develop`: Preview auf Vercel
 - Entwicklung und Tests erfolgen zunächst lokal.
 - Änderungen werden erst nach erfolgreicher Prüfung in `main` übernommen.
-Preview-Deployment-Test: develop-Branch.
+
