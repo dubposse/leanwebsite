@@ -127,3 +127,11 @@ Keine neue Migration: Die Berechtigung nutzt die vorhandenen Draft-Zugangsdaten 
 - Header: `Content-Disposition: attachment`, `Content-Type: text/html; charset=utf-8`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, restriktive CSP.
 - Seite `/order/complete` (Rewrite in `vercel.json`): liest die Zugangsdaten aus `localStorage`, fragt den Status per POST ab (Polling bis ca. 3 Minuten, solange der Webhook aussteht) und bietet den Download erst bei bestätigter Zahlung an. Der Parameter `?checkout=` ist nur ein Texthinweis. Bei „Rundum sorglos“ weist die Seite darauf hin, dass Hosting und Betreuung separat folgen.
 - Offen: kein Rate-Limiting; die Download-Anzahl wird nicht begrenzt; Wiederzugriff nur im selben Browser (kein E-Mail-Link).
+
+
+## Deployment
+
+- `main`: Production auf Vercel
+- `develop`: Preview auf Vercel
+- Entwicklung und Tests erfolgen zunächst lokal.
+- Änderungen werden erst nach erfolgreicher Prüfung in `main` übernommen.
