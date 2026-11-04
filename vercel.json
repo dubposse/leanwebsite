@@ -2,6 +2,8 @@
   "rewrites": [
     { "source": "/builder/artist-band", "destination": "/index.html" },
     { "source": "/builder/artist-band/", "destination": "/index.html" },
+    { "source": "/builder/business", "destination": "/index.html" },
+    { "source": "/builder/business/", "destination": "/index.html" },
     { "source": "/order/complete", "destination": "/index.html" },
     { "source": "/order/complete/", "destination": "/index.html" }
   ]
