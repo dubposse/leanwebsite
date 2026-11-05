@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { describe, it } from 'node:test'
 import { resolveOrderCompleteContext } from '../src/order-complete.js'
 
@@ -33,5 +34,13 @@ describe('order completion builder context', () => {
 
     assert.equal(result.builder, 'unknown')
     assert.equal(result.context, null)
+  })
+
+  it('presents the confirmation instructions without opening or sending email', async () => {
+    const source = await readFile(new URL('../src/order-complete.js', import.meta.url), 'utf8')
+    assert.match(source, /Deine Zahlung wurde bestätigt!/)
+    assert.match(source, /Auftragsbestätigung als PDF herunterladen/)
+    assert.match(source, /kontakt@matthiasbrehm\.de/)
+    assert.doesNotMatch(source, /mailto:|sendgrid|nodemailer|sendEmail/i)
   })
 })

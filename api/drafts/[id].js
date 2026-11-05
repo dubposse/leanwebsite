@@ -1,5 +1,6 @@
 import { getSql } from '../_lib/db.js'
 import { loadDraft, saveDraft } from '../_lib/drafts.js'
+import { loadOrderFulfillment } from '../_lib/fulfillment.js'
 import { defaultGenerators, isPlainObject } from '../_lib/generators.js'
 import { HttpError, readBearerToken, readJsonBody, sendError } from '../_lib/http.js'
 import { sendJson } from '../_lib/json.js'
@@ -34,9 +35,15 @@ export function createDraftHandler({
     try {
       const draftToken = readBearerToken(req)
       const draftId = draftIdOf(req)
+      const sql = getDb()
 
       if (req.method === 'GET') {
-        return sendJson(res, 200, await loadDraft({ sql: getDb(), get: storage.getObject, draftId, draftToken }))
+        const loaded = await loadDraft({ sql, get: storage.getObject, draftId, draftToken })
+        if (loaded.builder === 'artist-band' && loaded.status === 'draft') {
+          const fulfillment = await loadOrderFulfillment({ sql, draftId, draftToken })
+          if (fulfillment.data) loaded.fulfillmentData = fulfillment.data
+        }
+        return sendJson(res, 200, loaded)
       }
 
       const body = await readJsonBody(req, MAX_BODY_BYTES)
@@ -46,7 +53,7 @@ export function createDraftHandler({
       }
 
       const saved = await saveDraft({
-        sql: getDb(),
+        sql,
         put: storage.putObject,
         generators,
         draftId,

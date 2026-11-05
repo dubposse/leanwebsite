@@ -10,8 +10,10 @@ export function createFakeDb() {
     builders: [{ ...BUILDER }],
     drafts: [],
     orders: [],
+    fulfillments: new Map(),
     events: new Map(),
     failNextWrite: false,
+    failFulfillmentWrite: false,
     queries: [],
   }
 
@@ -73,6 +75,77 @@ export function createFakeDb() {
 
     if (text.includes('FROM orders WHERE stripe_checkout_session_id')) {
       return db.orders.filter((o) => o.stripe_checkout_session_id === params[0]).map((o) => ({ ...o }))
+    }
+
+    if (text.includes('WITH editable_order AS MATERIALIZED')) {
+      if (db.failFulfillmentWrite) {
+        db.failFulfillmentWrite = false
+        throw new Error('simulated fulfillment failure')
+      }
+
+      const [draftId, packageCode, orderId] = params
+      const order = db.orders.find(
+        (o) =>
+          o.draft_id === draftId &&
+          o.package_code === packageCode &&
+          o.status === 'pending' &&
+          !o.stripe_checkout_session_id &&
+          (!orderId || o.id === orderId),
+      )
+      if (!order) return []
+
+      const fulfillment = {}
+      const columns = [
+        'first_name',
+        'last_name',
+        'billing_street',
+        'billing_postal_code',
+        'billing_city',
+        'billing_country_code',
+        'communication_email',
+        'desired_domain',
+        'alternative_domain',
+        'domain_holder_differs',
+        'domain_holder_first_name',
+        'domain_holder_last_name',
+        'domain_holder_street',
+        'domain_holder_postal_code',
+        'domain_holder_city',
+        'domain_holder_country_code',
+        'domain_holder_email',
+        'hostinger_consent_version',
+        'hostinger_consented_at',
+      ]
+      columns.forEach((column, index) => {
+        fulfillment[column] = params[index + 3]
+      })
+      fulfillment.fulfillment_status = db.fulfillments.get(order.id)?.fulfillment_status ?? 'pending'
+      db.fulfillments.set(order.id, fulfillment)
+      return [{ order_id: order.id }]
+    }
+
+    if (text.includes('LEFT JOIN order_fulfillment')) {
+      const explicitOrder = text.includes('WHERE o.id = $1')
+      const [first, second, packageCode] = params
+      const order = explicitOrder
+        ? db.orders.find(
+            (o) =>
+              o.id === first &&
+              o.draft_id === second &&
+              o.package_code === packageCode &&
+              o.status === 'pending',
+          )
+        : db.orders
+            .filter((o) => o.draft_id === first && o.package_code === second && o.status === 'pending')
+            .sort((a, b) => b.created_at - a.created_at)[0]
+      if (!order) return []
+
+      return [{ order_id: order.id, ...(db.fulfillments.get(order.id) ?? {}) }]
+    }
+
+    if (text.includes('FROM order_fulfillment WHERE order_id')) {
+      const fulfillment = db.fulfillments.get(params[0])
+      return fulfillment ? [{ ...fulfillment }] : []
     }
 
     if (text.includes('FROM drafts d JOIN builders')) {

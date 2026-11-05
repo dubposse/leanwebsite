@@ -1,17 +1,26 @@
 import { createHash } from 'node:crypto'
-import { loadAuthorizedDraft, UUID_PATTERN } from './drafts.js'
+import { draftContentKeyOf, loadAuthorizedDraft, UUID_PATTERN } from './drafts.js'
 import { HttpError } from './http.js'
 import { getPackage } from './packages.js'
 import { getSql } from './db.js'
 import { assertValidKey, getObject, orderSnapshotKey } from './storage.js'
+import { FULFILLMENT_PACKAGE_CODE } from './fulfillment.js'
+import { createOrderConfirmationPdf } from './order-confirmation-pdf.js'
 
 // The paid order of a draft is found via orders.draft_id after the draft credentials were verified.
 // A paid order wins over older failed or pending ones; the status comes only from the webhook-written column.
-const SELECT_DOWNLOAD_ORDER_SQL = `SELECT o.id, o.status, o.package_code, o.paid_at, o.snapshot_key,
-    o.snapshot_sha256, o.snapshot_size, o.snapshot_content_type
+const SELECT_DOWNLOAD_ORDER_SQL = `SELECT o.id, o.status, o.package_code, o.amount_cents, o.currency,
+    o.created_at, o.paid_at, o.snapshot_key, o.snapshot_sha256, o.snapshot_size, o.snapshot_content_type
   FROM orders o WHERE o.draft_id = $1
   ORDER BY (o.status = 'paid') DESC, o.created_at DESC
   LIMIT 1`
+
+const SELECT_PAID_FULFILLMENT_SQL = `SELECT first_name, last_name, billing_street, billing_postal_code,
+    billing_city, billing_country_code, communication_email, desired_domain, alternative_domain,
+    domain_holder_differs, domain_holder_first_name, domain_holder_last_name, domain_holder_street,
+    domain_holder_postal_code, domain_holder_city, domain_holder_country_code, domain_holder_email,
+    hostinger_consent_version, hostinger_consented_at
+  FROM order_fulfillment WHERE order_id = $1`
 
 export const DOWNLOAD_FILE_NAME = 'website.html'
 
@@ -52,12 +61,12 @@ async function loadOrder(sql, body) {
   const draft = await loadAuthorizedDraft(sql, { draftId, draftToken })
   const [order] = await sql.query(SELECT_DOWNLOAD_ORDER_SQL, [draft.id])
 
-  return order ?? null
+  return { order: order ?? null, draft }
 }
 
 /** Order status for the completion page. Reveals neither storage keys nor checksums. */
 export async function getOrderStatus({ sql = getSql(), body }) {
-  const order = await loadOrder(sql, body)
+  const { order } = await loadOrder(sql, body)
 
   if (!order) return { status: 'none', downloadAvailable: false }
 
@@ -73,7 +82,7 @@ export async function getOrderStatus({ sql = getSql(), body }) {
 
 /** Returns { body, fileName, size, sha256 } of the verified snapshot or throws. */
 export async function loadPaidSnapshot({ sql = getSql(), storage = { getObject }, body }) {
-  const order = await loadOrder(sql, body)
+  const { order } = await loadOrder(sql, body)
 
   if (!order) throw new DownloadError(404, 'Order not found', 'order_not_found')
   if (order.status !== 'paid') throw new DownloadError(402, 'Payment is not confirmed', 'not_paid')
@@ -104,4 +113,55 @@ export async function loadPaidSnapshot({ sql = getSql(), storage = { getObject }
   }
 
   return { body: content, fileName: DOWNLOAD_FILE_NAME, size: content.byteLength, sha256 }
+}
+
+/** Loads and renders confirmation data only after draft authorization and payment verification. */
+export async function loadPaidOrderConfirmation({ sql = getSql(), storage = { getObject }, body }) {
+  const { order, draft } = await loadOrder(sql, body)
+
+  if (!order) throw new DownloadError(404, 'Order not found', 'order_not_found')
+  if (order.status !== 'paid') throw new DownloadError(402, 'Payment is not confirmed', 'not_paid')
+  if (order.package_code !== FULFILLMENT_PACKAGE_CODE) {
+    throw new DownloadError(404, 'Order not found', 'order_not_found')
+  }
+
+  const [fulfillment] = await sql.query(SELECT_PAID_FULFILLMENT_SQL, [order.id])
+  if (!fulfillment) throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
+
+  let artistName = null
+  const contentKey = draftContentKeyOf(draft)
+
+  if (contentKey) {
+    const object = await storage.getObject(contentKey)
+    if (object?.contentType === 'application/json') {
+      try {
+        const content = JSON.parse(object.body.toString('utf8'))
+        if (typeof content?.name === 'string' && content.name.trim()) {
+          artistName = content.name.trim()
+        }
+      } catch {
+        artistName = null
+      }
+    }
+  }
+
+  const amountCents = Number(order.amount_cents)
+  if (!Number.isSafeInteger(amountCents) || amountCents < 0
+    || typeof order.currency !== 'string' || !/^[A-Z]{3}$/.test(order.currency)
+    || !order.created_at || !fulfillment.hostinger_consented_at) {
+    throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
+  }
+
+  const pdf = await createOrderConfirmationPdf({
+    order,
+    fulfillment,
+    amountCents,
+    artistName,
+  })
+
+  return {
+    body: Buffer.from(pdf),
+    fileName: 'auftragsbestaetigung-rundum-sorglos.pdf',
+    size: pdf.byteLength,
+  }
 }

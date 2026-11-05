@@ -1,5 +1,12 @@
 import { getPackagesForBuilder } from '../shared/packages.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
+import {
+  collectArtistBandFulfillment,
+  createArtistBandCheckoutPayload,
+  HOSTINGER_CONSENT_TEXT,
+  HOSTINGER_CONSENT_VERSION,
+  packageRequiresFulfillment,
+} from './artist-band-fulfillment.js'
 
 const STORAGE_KEY = 'leanwebsite-artist-band-draft-v1'
 const MAX_COVER_BYTES = 1.5 * 1024 * 1024
@@ -49,6 +56,27 @@ function apiErrorMessage(message, status) {
     'This draft can no longer be purchased': 'Dieser Entwurf kann nicht mehr gekauft werden.',
     'This draft has no saved content yet': 'Der Entwurf enthält noch keine gespeicherten Änderungen.',
     'Unknown package for this builder': 'Bitte wähle ein verfügbares Artist/Band-Paket.',
+    'Invalid fulfillment data': 'Bitte prüfe die Auftragsdaten.',
+    'Hostinger setup consent is required': 'Bitte bestätige die Zustimmung zur Hostinger-Einrichtung.',
+    'Invalid desired domain': 'Die gewünschte Domain ist ungültig. Bitte gib eine neue .de-Domain ein.',
+    'Invalid alternative domain': 'Die alternative Domain ist ungültig. Bitte gib eine .de-Domain ein.',
+    'Alternative domain must differ from desired domain': 'Wunschdomain und alternative Domain müssen verschieden sein.',
+    'Invalid first name': 'Bitte prüfe den Vornamen.',
+    'Invalid last name': 'Bitte prüfe den Nachnamen.',
+    'Invalid billing street': 'Bitte prüfe Straße und Hausnummer.',
+    'Invalid billing postal code': 'Bitte prüfe die Postleitzahl.',
+    'Invalid billing city': 'Bitte prüfe den Ort.',
+    'Invalid billing country code': 'Bitte prüfe den Ländercode.',
+    'Invalid email address': 'Bitte gib eine gültige E-Mail-Adresse ein.',
+    'Invalid domain holder details': 'Bitte prüfe die Angaben zum Domaininhaber.',
+    'Invalid domain holder first name': 'Bitte prüfe den Vornamen des Domaininhabers.',
+    'Invalid domain holder last name': 'Bitte prüfe den Nachnamen des Domaininhabers.',
+    'Invalid domain holder street': 'Bitte prüfe die Straße des Domaininhabers.',
+    'Invalid domain holder postal code': 'Bitte prüfe die Postleitzahl des Domaininhabers.',
+    'Invalid domain holder city': 'Bitte prüfe den Ort des Domaininhabers.',
+    'Invalid domain holder country code': 'Bitte prüfe den Ländercode des Domaininhabers.',
+    'Invalid domain holder email': 'Bitte gib eine gültige E-Mail-Adresse des Domaininhabers ein.',
+    'This order is no longer editable': 'Dieser Auftrag ist nicht mehr bearbeitbar.',
   }
 
   if (known[message]) return known[message]
@@ -196,16 +224,68 @@ export function renderArtistBandBuilder(app) {
             <section class="ab-card ab-buy-card" aria-labelledby="ab-package-title">
               <div class="ab-card-heading"><span>04</span><div><h2 id="ab-package-title">Deine Website kaufen</h2><p>Wähle das passende Artist/Band-Paket.</p></div></div>
               <div id="ab-packages" class="ab-packages"></div>
+              <form id="ab-fulfillment" class="ab-fulfillment" hidden novalidate>
+                <fieldset id="ab-fulfillment-fields">
+                  <legend class="ab-sr-only">Auftragsdaten für Rundum sorglos</legend>
+                  <div class="ab-fulfillment-heading">
+                    <h3>Angaben für deinen Auftrag</h3>
+                    <p>Diese Daten verwenden wir ausschließlich für die Einrichtung deines Hostinger-Accounts und deiner neuen Domain.</p>
+                  </div>
+                  <p class="ab-artist-context">Website-Name aus deinem Entwurf: <strong id="ab-artist-name"></strong>. Das ist nicht dein rechtlicher Name als Auftraggeber.</p>
+                  <div class="ab-fields-grid">
+                    <label class="ab-field">Vorname<input name="firstName" maxlength="100" autocomplete="given-name" required></label>
+                    <label class="ab-field">Nachname<input name="lastName" maxlength="100" autocomplete="family-name" required></label>
+                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="billingStreet" maxlength="200" autocomplete="street-address" required></label>
+                    <label class="ab-field">Postleitzahl<input name="billingPostalCode" maxlength="20" autocomplete="postal-code" required></label>
+                    <label class="ab-field">Ort<input name="billingCity" maxlength="100" autocomplete="address-level2" required></label>
+                    <label class="ab-field">Land (Ländercode)<input name="billingCountryCode" maxlength="2" placeholder="DE" autocomplete="country" required></label>
+                    <label class="ab-field ab-field-wide">E-Mail für die Auftragskommunikation<input name="communicationEmail" type="email" maxlength="254" autocomplete="off" required></label>
+                    <label class="ab-field">Gewünschte neue .de-Domain<input name="desiredDomain" maxlength="253" placeholder="dein-name.de" autocapitalize="none" spellcheck="false" required></label>
+                    <label class="ab-field">Alternative .de-Domain (optional)<input name="alternativeDomain" maxlength="253" placeholder="dein-name-2.de" autocapitalize="none" spellcheck="false"></label>
+                    <label class="ab-field ab-field-wide">Domaininhaber
+                      <select name="domainHolderDiffers">
+                        <option value="false">Der Domaininhaber entspricht dem Auftraggeber.</option>
+                        <option value="true">Der Domaininhaber ist eine andere Person.</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div id="ab-domain-holder-fields" class="ab-fields-grid ab-domain-holder-fields" hidden>
+                    <h4 class="ab-field-wide">Angaben zum abweichenden Domaininhaber</h4>
+                    <label class="ab-field">Vorname<input name="domainHolderFirstName" maxlength="100" autocomplete="off"></label>
+                    <label class="ab-field">Nachname<input name="domainHolderLastName" maxlength="100" autocomplete="off"></label>
+                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="domainHolderStreet" maxlength="200" autocomplete="off"></label>
+                    <label class="ab-field">Postleitzahl<input name="domainHolderPostalCode" maxlength="20" autocomplete="off"></label>
+                    <label class="ab-field">Ort<input name="domainHolderCity" maxlength="100" autocomplete="off"></label>
+                    <label class="ab-field">Land (Ländercode)<input name="domainHolderCountryCode" maxlength="2" placeholder="DE" autocomplete="off"></label>
+                    <label class="ab-field">E-Mail-Adresse<input name="domainHolderEmail" type="email" maxlength="254" autocomplete="off"></label>
+                  </div>
+                  <section class="ab-hostinger-notes" aria-labelledby="ab-hostinger-title">
+                    <h4 id="ab-hostinger-title">Wichtige Hinweise zu Hosting und Domain</h4>
+                    <ul>
+                      <li>Das Hosting erfolgt ausschließlich bei Hostinger; eingerichtet wird eine neue, verfügbare .de-Domain. Bestehende Domains werden nicht übernommen.</li>
+                      <li>Der Hostinger-Account wird mit deiner angegebenen E-Mail-Adresse eingerichtet und nach der technischen Einrichtung an dich übergeben.</li>
+                      <li>LeanWebsite Studio übernimmt den ersten Hostingmonat und das erste Domainjahr. Ab dem zweiten Monat trägst du die Hostingkosten, ab dem zweiten Jahr die Kosten einer Domainverlängerung.</li>
+                      <li>Es wird kein E-Mail-Postfach eingerichtet. Die geltenden Hostinger-Preise und Vertragsbedingungen werden vor Abschluss der entsprechenden Verträge mitgeteilt.</li>
+                      <li>Die Veröffentlichung erfolgt normalerweise innerhalb von fünf Werktagen, nachdem alle erforderlichen Angaben und Zugänge vorliegen.</li>
+                    </ul>
+                  </section>
+                  <label class="ab-consent" data-consent-version="${HOSTINGER_CONSENT_VERSION}">
+                    <input name="hostingerConsent" type="checkbox" required>
+                    <span>${HOSTINGER_CONSENT_TEXT}</span>
+                  </label>
+                  <p id="ab-fulfillment-error" class="ab-fulfillment-error" role="alert" hidden></p>
+                </fieldset>
+              </form>
               <p class="ab-payment-note">Der angezeigte Preis wird beim Checkout serverseitig bestätigt. Es wird nichts automatisch heruntergeladen.</p>
               <div class="ab-actions">
                 <button id="ab-save" class="ab-save-button" type="button">Entwurf speichern</button>
                 <button id="ab-checkout" class="ab-checkout-button" type="button">Weiter zum sicheren Checkout <span aria-hidden="true">→</span></button>
               </div>
               <p id="ab-status" class="ab-status" role="status" aria-live="polite"></p>
-              <button id="ab-new-draft" class="ab-text-button" type="button" hidden>Neuen Entwurf beginnen</button>
+              <button id="ab-new-draft" class="ab-text-button" type="button" hidden>Neuen Serverentwurf starten</button>
             </section>
 
-            <p class="ab-privacy-note">Die Vorschau wird in deinem Browser erzeugt. Beim Speichern und Checkout werden deine Formularinhalte inklusive eines hochgeladenen Covers an LeanWebsite übertragen und für deinen privaten Entwurf gespeichert. Entwurfs-Zugangsdaten bleiben lokal in diesem Browser gespeichert; gib diese nicht weiter.</p>
+            <p class="ab-privacy-note">Die Vorschau wird in deinem Browser erzeugt. Beim Speichern werden die Inhalte deiner Website inklusive Cover für deinen privaten Entwurf gespeichert. Auftragsdaten werden bei einem Rundum-sorglos-Checkout separat und nur für die Bestellung serverseitig gespeichert. Entwurfs-Zugangsdaten bleiben lokal in diesem Browser gespeichert; gib diese nicht weiter.</p>
           </section>
 
           <aside class="ab-preview-panel" aria-label="Live-Vorschau deiner Website">
@@ -226,6 +306,11 @@ export function renderArtistBandBuilder(app) {
   const checkoutButton = app.querySelector('#ab-checkout')
   const newDraftButton = app.querySelector('#ab-new-draft')
   const packageBox = app.querySelector('#ab-packages')
+  const fulfillmentForm = app.querySelector('#ab-fulfillment')
+  const fulfillmentFields = app.querySelector('#ab-fulfillment-fields')
+  const domainHolderFields = app.querySelector('#ab-domain-holder-fields')
+  const artistName = app.querySelector('#ab-artist-name')
+  const fulfillmentError = app.querySelector('#ab-fulfillment-error')
   const coverInput = app.querySelector('#ab-cover')
   const coverName = app.querySelector('#ab-cover-name')
   const coverPreviewWrap = app.querySelector('#ab-cover-preview-wrap')
@@ -240,6 +325,7 @@ export function renderArtistBandBuilder(app) {
   let coverPromise = null
   let coverProcessingError = false
   let restoreError = ''
+  let draftLocked = false
 
   const packages = getPackagesForBuilder('artist-band')
   packageBox.innerHTML = packages.map((item, index) => `
@@ -253,6 +339,52 @@ export function renderArtistBandBuilder(app) {
   function setStatus(message, kind = '') {
     status.textContent = message
     status.dataset.kind = kind
+  }
+
+  function showFulfillmentError(message) {
+    fulfillmentError.textContent = message
+    fulfillmentError.hidden = !message
+  }
+
+  function updateDomainHolderFields() {
+    const differs = fulfillmentForm.elements.domainHolderDiffers.value === 'true'
+    domainHolderFields.hidden = !differs
+    for (const input of domainHolderFields.querySelectorAll('input')) input.required = differs
+  }
+
+  function updateSelectedPackage() {
+    const selectedPackage = packageBox.querySelector('input[name="package"]:checked')?.value
+    const showFulfillment = packageRequiresFulfillment(selectedPackage)
+    fulfillmentForm.hidden = !showFulfillment
+    fulfillmentFields.disabled = !showFulfillment || checkoutPending || draftLocked
+    if (!showFulfillment) showFulfillmentError('')
+  }
+
+  function restoreFulfillmentData(value) {
+    if (!value) return
+    for (const [key, field] of [
+      ['firstName', 'firstName'],
+      ['lastName', 'lastName'],
+      ['billingStreet', 'billingStreet'],
+      ['billingPostalCode', 'billingPostalCode'],
+      ['billingCity', 'billingCity'],
+      ['billingCountryCode', 'billingCountryCode'],
+      ['communicationEmail', 'communicationEmail'],
+      ['desiredDomain', 'desiredDomain'],
+      ['alternativeDomain', 'alternativeDomain'],
+      ['domainHolderFirstName', 'domainHolderFirstName'],
+      ['domainHolderLastName', 'domainHolderLastName'],
+      ['domainHolderStreet', 'domainHolderStreet'],
+      ['domainHolderPostalCode', 'domainHolderPostalCode'],
+      ['domainHolderCity', 'domainHolderCity'],
+      ['domainHolderCountryCode', 'domainHolderCountryCode'],
+      ['domainHolderEmail', 'domainHolderEmail'],
+    ]) {
+      fulfillmentForm.elements[field].value = value[key] ?? ''
+    }
+    fulfillmentForm.elements.domainHolderDiffers.value = String(value.domainHolderDiffers === true)
+    fulfillmentForm.elements.hostingerConsent.checked = value.hostingerConsent === true
+    updateDomainHolderFields()
   }
 
   function updateCoverPreview() {
@@ -276,6 +408,7 @@ export function renderArtistBandBuilder(app) {
 
   function markChanged() {
     revision += 1
+    artistName.textContent = data.name
     if (!checkoutPending) setStatus('Nicht gespeicherte Änderungen. Speichere den Entwurf vor dem Verlassen der Seite.', 'pending')
     updatePreview()
   }
@@ -323,6 +456,7 @@ export function renderArtistBandBuilder(app) {
 
   function renderForm() {
     for (const key of FIELD_NAMES) form.elements[key].value = data[key]
+    artistName.textContent = data.name
     renderList('tracks')
     renderList('gigs')
     updateCoverPreview()
@@ -429,7 +563,6 @@ export function renderArtistBandBuilder(app) {
     draft = reference
     fields.disabled = true
     setStatus('Gespeicherter Entwurf wird geladen …')
-    let draftLocked = false
     try {
       const loaded = await requestJson(`/api/drafts/${encodeURIComponent(draft.draftId)}`, { token: draft.draftToken })
       if (loaded.builder !== 'artist-band') throw new Error('Der gespeicherte Entwurf gehört nicht zum Artist/Band-Builder.')
@@ -443,10 +576,16 @@ export function renderArtistBandBuilder(app) {
         savedRevision = -1
         setStatus('Dein Entwurf ist bereit. Speichere deine Änderungen, um sie zu sichern.')
       }
+      if (loaded.fulfillmentData) {
+        packageBox.querySelector('input[value="artist-band-rundum-sorglos"]').checked = true
+        restoreFulfillmentData(loaded.fulfillmentData)
+        updateSelectedPackage()
+      }
       if (loaded.status === 'locked') {
         draftLocked = true
         saveButton.disabled = true
         checkoutButton.disabled = true
+        fulfillmentFields.disabled = true
         newDraftButton.hidden = false
         setStatus('Dieser Entwurf ist gesperrt und kann nicht mehr bearbeitet oder gekauft werden.', 'error')
       }
@@ -468,6 +607,13 @@ export function renderArtistBandBuilder(app) {
   })
 
   form.addEventListener('submit', (event) => event.preventDefault())
+
+  packageBox.addEventListener('change', updateSelectedPackage)
+  fulfillmentForm.addEventListener('change', (event) => {
+    if (event.target.name === 'domainHolderDiffers') updateDomainHolderFields()
+    showFulfillmentError('')
+  })
+  fulfillmentForm.addEventListener('input', () => showFulfillmentError(''))
 
   app.querySelector('#ab-add-track').addEventListener('click', () => {
     if (data.tracks.length >= 20) {
@@ -522,6 +668,7 @@ export function renderArtistBandBuilder(app) {
   })
 
   checkoutButton.addEventListener('click', async () => {
+    if (checkoutPending) return
     const selectedPackage = packageBox.querySelector('input[name="package"]:checked')?.value
     if (!packages.some((item) => item.code === selectedPackage)) {
       setStatus('Bitte wähle ein gültiges Paket aus.', 'error')
@@ -530,6 +677,7 @@ export function renderArtistBandBuilder(app) {
 
     checkoutPending = true
     fields.disabled = true
+    fulfillmentFields.disabled = true
     packageBox.querySelectorAll('input').forEach((input) => { input.disabled = true })
     checkoutButton.disabled = true
     saveButton.disabled = true
@@ -539,15 +687,18 @@ export function renderArtistBandBuilder(app) {
       if (coverPromise) await coverPromise
       if (coverProcessingError) throw new Error('Bitte lade ein gültiges Cover hoch oder entferne das fehlerhafte Cover, bevor du fortfährst.')
       await saveLatest()
+      const orderData = selectedPackage === 'artist-band-rundum-sorglos'
+        ? collectArtistBandFulfillment(fulfillmentForm)
+        : null
       const reference = draft
       const checkout = await requestJson('/api/checkout', {
         method: 'POST',
-        body: {
-          builder: 'artist-band',
-          package: selectedPackage,
+        body: createArtistBandCheckoutPayload({
+          packageCode: selectedPackage,
           draftId: reference.draftId,
           draftToken: reference.draftToken,
-        },
+          fulfillmentData: orderData,
+        }),
       })
       let checkoutUrl
       try {
@@ -562,30 +713,55 @@ export function renderArtistBandBuilder(app) {
     } catch (error) {
       checkoutPending = false
       fields.disabled = false
+      updateSelectedPackage()
       packageBox.querySelectorAll('input').forEach((input) => { input.disabled = false })
       checkoutButton.disabled = false
       saveButton.disabled = false
+      showFulfillmentError(selectedPackage === 'artist-band-rundum-sorglos' ? error.message : '')
       setStatus(error.message, 'error')
     }
   })
 
   newDraftButton.addEventListener('click', () => {
+    if (savePromise || checkoutPending || coverPromise) {
+      setStatus('Warte, bis der laufende Vorgang abgeschlossen ist, bevor du einen neuen Serverentwurf startest.', 'error')
+      return
+    }
+    if (!window.confirm('Die lokale Zuordnung zum bisherigen Serverentwurf wird aufgehoben. Der Serverentwurf und bestehende Bestellungen bleiben unverändert bestehen. Deine aktuellen Eingaben werden auf den Ausgangszustand zurückgesetzt. Fortfahren?')) return
+
     try {
       localStorage.removeItem(STORAGE_KEY)
-      draft = null
-      restoreError = ''
-      savedRevision = -1
-      fields.disabled = false
-      saveButton.disabled = false
-      checkoutButton.disabled = false
-      packageBox.querySelectorAll('input').forEach((input) => { input.disabled = false })
-      setStatus('Ein neuer Entwurf wird beim ersten Speichern angelegt.')
-      newDraftButton.hidden = true
     } catch {
       setStatus('Die gespeicherte Entwurfsreferenz konnte nicht entfernt werden.', 'error')
+      return
     }
+
+    draft = null
+    draftLocked = false
+    restoreError = ''
+    revision = 0
+    savedRevision = -1
+    data = cloneData(DEFAULT_DATA)
+    renderForm()
+    fulfillmentForm.reset()
+    coverInput.value = ''
+    showFulfillmentError('')
+    packageBox.querySelectorAll('input').forEach((input, index) => {
+      input.disabled = false
+      input.checked = index === 0
+    })
+    fields.disabled = false
+    saveButton.disabled = false
+    checkoutButton.disabled = false
+    coverProcessingError = false
+    updateDomainHolderFields()
+    updateSelectedPackage()
+    newDraftButton.hidden = true
+    setStatus('Neuer Entwurf bereit. Der Serverentwurf wird beim ersten Speichern angelegt.', 'success')
   })
 
   renderForm()
+  updateDomainHolderFields()
+  updateSelectedPackage()
   restoreDraft()
 }

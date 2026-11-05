@@ -15,7 +15,7 @@ function pendingOrder(overrides = {}) {
     draft_id: DRAFT_ID,
     status: 'pending',
     package_code: 'artist-band-code-and-go',
-    amount_cents: 24900,
+    amount_cents: 3900,
     currency: 'EUR',
     stripe_checkout_session_id: SESSION_ID,
     stripe_payment_intent_id: null,
@@ -36,7 +36,7 @@ function buildEvent({ id = 'evt_1', type = 'checkout.session.completed', session
         id: SESSION_ID,
         object: 'checkout.session',
         payment_status: 'paid',
-        amount_total: 24900,
+        amount_total: 3900,
         currency: 'eur',
         client_reference_id: ORDER_ID,
         payment_intent: 'pi_test_1',
@@ -89,7 +89,7 @@ describe('POST /api/stripe-webhook', () => {
     it('rejects a payload modified after signing', async () => {
       const body = JSON.stringify(buildEvent())
       const signature = Stripe.webhooks.generateTestHeaderString({ payload: body, secret: SECRET })
-      const res = await send(body.replace('24900', '1'), { signature })
+      const res = await send(body.replace('3900', '1'), { signature })
       assert.equal(res.statusCode, 400)
       assert.equal(db.orders[0].status, 'pending')
     })

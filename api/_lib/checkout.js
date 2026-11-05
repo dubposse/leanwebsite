@@ -6,6 +6,13 @@ import { HttpError } from './http.js'
 import { CURRENCY, getPackage } from './packages.js'
 import { getObject, orderSnapshotKey, putObject } from './storage.js'
 import { isWellFormedToken } from './tokens.js'
+import {
+  FULFILLMENT_PACKAGE_CODE,
+  fulfillmentDataMatches,
+  loadOrderFulfillmentForOrder,
+  saveOrderFulfillment,
+  validateFulfillmentData,
+} from './fulfillment.js'
 
 export class CheckoutError extends HttpError {
   constructor(statusCode, message) {
@@ -14,7 +21,7 @@ export class CheckoutError extends HttpError {
   }
 }
 
-const ALLOWED_FIELDS = ['builder', 'package', 'draftId', 'draftToken']
+const ALLOWED_FIELDS = ['builder', 'package', 'draftId', 'draftToken', 'fulfillmentData']
 const CODE_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 const SELECT_OPEN_ORDERS_SQL = `SELECT id, status, package_code, amount_cents, currency, stripe_checkout_session_id, snapshot_key, snapshot_sha256
@@ -77,7 +84,13 @@ export function parseCheckoutRequest(body) {
     throw new CheckoutError(400, 'Invalid draft token')
   }
 
-  return { builderSlug: builder, packageCode, draftId: draftId.toLowerCase(), draftToken }
+  return {
+    builderSlug: builder,
+    packageCode,
+    draftId: draftId.toLowerCase(),
+    draftToken,
+    ...(Object.hasOwn(body, 'fulfillmentData') && { fulfillmentData: body.fulfillmentData }),
+  }
 }
 
 // The base URL comes from configuration, never from request headers.
@@ -229,13 +242,14 @@ async function failOrder(sql, orderId) {
 
 // Reuses, repairs or retires the draft's open order. Returns { url } for a live checkout,
 // { order } for an order that still needs a Stripe session, or { order: null } when a new order is needed.
-async function settlePendingOrder({ sql, stripe, pkg, content }, pending) {
+async function settlePendingOrder({ sql, stripe, pkg, content }, pending, { forceRetire = false } = {}) {
   // An order whose snapshot differs from the current draft content must not be reused: the customer
   // would pay for outdated content. An order without snapshot can only be reused while it has no session.
   const sameSnapshot = pending.snapshot_sha256
     ? pending.snapshot_sha256 === content.sha256
     : !pending.stripe_checkout_session_id
   const sameOffer =
+    !forceRetire &&
     sameSnapshot &&
     pending.package_code === pkg.code &&
     pending.amount_cents === pkg.amountCents &&
@@ -329,6 +343,11 @@ export async function createCheckoutSession({
 }) {
   const draft = await loadAuthorizedDraft(sql, request)
   const pkg = resolvePackage(draft, request)
+  const requiresFulfillment = pkg.code === FULFILLMENT_PACKAGE_CODE
+  if (!requiresFulfillment && Object.hasOwn(request, 'fulfillmentData')) {
+    throw new CheckoutError(400, 'Fulfillment data is only accepted for Rundum-Sorglos orders')
+  }
+  const fulfillmentData = requiresFulfillment ? validateFulfillmentData(request.fulfillmentData) : null
   const content = await readDraftContent({ storage, draft, generators, year })
   const context = { sql, stripe, siteUrl, draft, pkg, storage, content }
 
@@ -345,9 +364,30 @@ export async function createCheckoutSession({
     let order = null
 
     if (pending) {
-      const settled = await settlePendingOrder(context, pending)
+      const savedFulfillment = requiresFulfillment
+        ? await loadOrderFulfillmentForOrder({ sql, draftId: draft.id, draftToken: request.draftToken, orderId: pending.id })
+        : null
+      const fulfillmentMatches = requiresFulfillment
+        ? savedFulfillment?.data && fulfillmentDataMatches(savedFulfillment.data, fulfillmentData)
+        : true
+      const settled = await settlePendingOrder(context, pending, {
+        forceRetire: Boolean(requiresFulfillment && pending.stripe_checkout_session_id && !fulfillmentMatches),
+      })
 
-      if (settled.url) return { url: settled.url }
+      if (settled.url) {
+        if (requiresFulfillment) {
+          const current = await loadOrderFulfillmentForOrder({
+            sql,
+            draftId: draft.id,
+            draftToken: request.draftToken,
+            orderId: pending.id,
+          })
+          if (!fulfillmentDataMatches(current?.data, fulfillmentData)) {
+            throw new CheckoutError(409, 'Checkout was superseded, please try again')
+          }
+        }
+        return { url: settled.url }
+      }
 
       order = settled.order
     }
@@ -364,6 +404,18 @@ export async function createCheckoutSession({
       }
     }
 
+    if (requiresFulfillment) {
+      const saved = await saveOrderFulfillment({
+        sql,
+        draftId: draft.id,
+        draftToken: request.draftToken,
+        orderId: order.id,
+        data: request.fulfillmentData,
+        returnConflict: true,
+      })
+      if (!saved) continue
+    }
+
     if (!order.snapshot_key) {
       const snapshotSha256 = await ensureSnapshot(context, order)
 
@@ -375,7 +427,19 @@ export async function createCheckoutSession({
     }
 
     // The session is created only after the snapshot is stored and referenced by the order.
-    return { url: await ensureSession(context, order) }
+    const url = await ensureSession(context, order)
+    if (requiresFulfillment) {
+      const current = await loadOrderFulfillmentForOrder({
+        sql,
+        draftId: draft.id,
+        draftToken: request.draftToken,
+        orderId: order.id,
+      })
+      if (!fulfillmentDataMatches(current?.data, fulfillmentData)) {
+        throw new CheckoutError(409, 'Checkout was superseded, please try again')
+      }
+    }
+    return { url }
   }
 
   throw new CheckoutError(409, 'A checkout for this draft is already in progress')

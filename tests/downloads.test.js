@@ -21,7 +21,7 @@ const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')
 const paidEvent = (id = 'evt_1') => ({
   id,
   type: 'checkout.session.completed',
-  data: { object: { id: SESSION_ID, payment_status: 'paid', amount_total: 24900, currency: 'eur', client_reference_id: ORDER_ID } },
+  data: { object: { id: SESSION_ID, payment_status: 'paid', amount_total: 3900, currency: 'eur', client_reference_id: ORDER_ID } },
 })
 
 function orderRow(id, draftId, overrides = {}) {
@@ -29,7 +29,7 @@ function orderRow(id, draftId, overrides = {}) {
     id,
     draft_id: draftId,
     package_code: 'artist-band-code-and-go',
-    amount_cents: 24900,
+    amount_cents: 3900,
     currency: 'EUR',
     status: 'pending',
     stripe_checkout_session_id: SESSION_ID,

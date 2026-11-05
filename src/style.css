@@ -1082,6 +1082,101 @@ h2 {
   font-size: 10px;
 }
 
+.ab-fulfillment[hidden],
+.ab-domain-holder-fields[hidden],
+.ab-fulfillment-error[hidden] {
+  display: none;
+}
+
+.ab-fulfillment {
+  margin-top: 18px !important;
+  padding: 18px;
+  border: 1px solid rgba(200, 241, 105, 0.23) !important;
+  border-radius: 9px;
+  background: rgba(200, 241, 105, 0.025);
+}
+
+.ab-fulfillment fieldset {
+  display: grid;
+  gap: 16px;
+}
+
+.ab-fulfillment-heading h3,
+.ab-hostinger-notes h4,
+.ab-domain-holder-fields h4 {
+  margin: 0 0 6px;
+  color: var(--ab-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ab-fulfillment-heading p,
+.ab-artist-context {
+  margin: 0;
+  color: var(--ab-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.ab-artist-context strong {
+  color: var(--ab-ink);
+}
+
+.ab-domain-holder-fields {
+  padding-top: 15px;
+  border-top: 1px solid var(--ab-line);
+}
+
+.ab-domain-holder-fields h4 {
+  margin-bottom: 0;
+}
+
+.ab-hostinger-notes {
+  padding: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ab-hostinger-notes ul {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding-left: 17px;
+  color: #aab4ab;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.ab-consent {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  color: #d3dbd2;
+  font-size: 10px;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.ab-consent input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--ab-accent);
+}
+
+.ab-consent:focus-within {
+  outline: 2px solid rgba(200, 241, 105, 0.6);
+  outline-offset: 4px;
+}
+
+.ab-fulfillment-error {
+  margin: 0;
+  color: #ff9a8d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .ab-package strong {
   color: var(--ab-ink);
   font-size: 13px;
@@ -1342,6 +1437,36 @@ h2 {
 
 .oc-card .ab-status {
   font-size: 14px;
+}
+
+.oc-confirmation {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid rgba(198, 255, 0, 0.3);
+  border-radius: 14px;
+  background: rgba(198, 255, 0, 0.045);
+  color: var(--text, #f3f4f1);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.oc-confirmation[hidden] {
+  display: none;
+}
+
+.oc-confirmation p {
+  margin: 0;
+}
+
+.oc-contact-email {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.oc-confirmation .ab-checkout-button {
+  margin-top: 4px;
 }
 
 .oc-actions {

@@ -7,6 +7,7 @@ import { packages } from '../api/_lib/packages.js'
 import { defaultGenerators } from '../api/_lib/generators.js'
 import { generateAccessToken } from '../api/_lib/tokens.js'
 import { saveDraftContent } from '../api/_lib/drafts.js'
+import { HOSTINGER_CONSENT_VERSION } from '../api/_lib/fulfillment.js'
 import { buildRequest, buildResponse, createFakeDb, createTestGenerators, htmlFor, createFakeStorage, createFakeStripe } from './helpers/fakes.js'
 
 const DRAFT_ID = '33333333-3333-4333-8333-333333333333'
@@ -21,6 +22,20 @@ const HTML_V1 = htmlFor(['home'])
 const HTML_V2 = htmlFor(['home', 'about'])
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')
 const JSON_HEADERS = { 'content-type': 'application/json' }
+const fulfillmentData = (overrides = {}) => ({
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  billingStreet: '1 Musterstraße',
+  billingPostalCode: '10115',
+  billingCity: 'Berlin',
+  billingCountryCode: 'DE',
+  communicationEmail: 'ada@example.de',
+  desiredDomain: 'ada-example.de',
+  alternativeDomain: null,
+  domainHolderDiffers: false,
+  hostingerConsent: true,
+  ...overrides,
+})
 
 describe('POST /api/checkout', () => {
   let db
@@ -113,7 +128,7 @@ describe('POST /api/checkout', () => {
       assert.equal(params.mode, 'payment')
       assert.equal(params.client_reference_id, order.id)
       assert.equal(params.line_items[0].price_data.currency, 'eur')
-      assert.equal(params.line_items[0].price_data.unit_amount, 24900)
+      assert.equal(params.line_items[0].price_data.unit_amount, 3900)
       assert.equal(params.line_items[0].quantity, 1)
       assert.equal('automatic_tax' in params, false)
       assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success&builder=artist-band`)
@@ -123,15 +138,202 @@ describe('POST /api/checkout', () => {
     })
 
     it('uses the configured price of the selected package', async () => {
-      await send(validBody({ package: 'artist-band-rundum-sorglos' }))
-      assert.equal(db.orders[0].amount_cents, 39900)
-      assert.equal(stripe.sessions.get('cs_test_1').params.line_items[0].price_data.unit_amount, 39900)
+      await send(validBody({
+        package: 'artist-band-rundum-sorglos',
+        fulfillmentData: fulfillmentData(),
+      }))
+      assert.equal(db.orders[0].amount_cents, 7900)
+      assert.equal(stripe.sessions.get('cs_test_1').params.line_items[0].price_data.unit_amount, 7900)
     })
 
     it('does not mark anything as paid or lock the draft', async () => {
       await send(validBody())
       assert.equal(db.orders[0].status, 'pending')
       assert.equal(db.drafts[0].status, 'draft')
+    })
+  })
+
+  describe('Rundum-Sorglos fulfillment', () => {
+    const rundumBody = (overrides = {}) => validBody({
+      package: 'artist-band-rundum-sorglos',
+      fulfillmentData: fulfillmentData(),
+      ...overrides,
+    })
+
+    it('stores authorized fulfillment data before creating a Stripe session', async () => {
+      const createSession = stripe.checkout.sessions.create
+      stripe.checkout.sessions.create = async (...args) => {
+        assert.equal(db.fulfillments.size, 1)
+        const [orderId, saved] = [...db.fulfillments.entries()][0]
+        assert.equal(orderId, db.orders[0].id)
+        assert.equal(saved.communication_email, 'ada@example.de')
+        assert.equal(saved.hostinger_consent_version, HOSTINGER_CONSENT_VERSION)
+        assert.ok(saved.hostinger_consented_at instanceof Date)
+        assert.equal(saved.fulfillment_status, 'pending')
+        return createSession(...args)
+      }
+
+      const res = await send(rundumBody())
+
+      assert.equal(res.statusCode, 200)
+      assert.equal(db.orders.length, 1)
+      assert.equal(db.fulfillments.size, 1)
+      assert.deepEqual(stripe.sessions.get('cs_test_1').params.metadata, { order_id: db.orders[0].id })
+      assert.doesNotMatch(JSON.stringify(stripe.sessions.get('cs_test_1').params), /Ada|Lovelace|ada@example|ada-example/)
+    })
+
+    it('rejects missing or invalid fulfillment data without creating an order or session', async () => {
+      const missing = await send(validBody({ package: 'artist-band-rundum-sorglos' }))
+      const invalid = await send(rundumBody({
+        fulfillmentData: fulfillmentData({ desiredDomain: 'invalid.com' }),
+      }))
+      assert.equal(missing.statusCode, 400)
+      assert.equal(invalid.statusCode, 400)
+      assert.equal(db.orders.length, 0)
+      assert.equal(db.fulfillments.size, 0)
+      assert.equal(stripe.createCalls, 0)
+    })
+
+    it('does not save data or start checkout with invalid draft authorization', async () => {
+      const wrongToken = await send(rundumBody({ draftToken: otherToken }))
+      const missingToken = await send(rundumBody({ draftToken: undefined }))
+      assert.equal(wrongToken.statusCode, 404)
+      assert.equal(missingToken.statusCode, 400)
+      assert.equal(db.orders.length, 0)
+      assert.equal(db.fulfillments.size, 0)
+      assert.equal(stripe.createCalls, 0)
+    })
+
+    it('does not start a Stripe session when fulfillment storage fails', async () => {
+      db.failFulfillmentWrite = true
+      const res = await send(rundumBody())
+      assert.equal(res.statusCode, 500)
+      assert.deepEqual(res.body, { error: 'Checkout failed' })
+      assert.equal(db.orders.length, 1)
+      assert.equal(db.fulfillments.size, 0)
+      assert.equal(db.orders[0].stripe_checkout_session_id, null)
+      assert.equal(stripe.createCalls, 0)
+    })
+
+    it('reuses an open session for identical data without rewriting consent', async () => {
+      const first = await send(rundumBody())
+      const savedBefore = { ...db.fulfillments.get(db.orders[0].id) }
+      const second = await send(rundumBody())
+      assert.equal(first.statusCode, 200)
+      assert.equal(second.statusCode, 200)
+      assert.equal(second.body.url, first.body.url)
+      assert.equal(db.orders.length, 1)
+      assert.equal(stripe.sessions.size, 1)
+      assert.deepEqual(db.fulfillments.get(db.orders[0].id), savedBefore)
+    })
+
+    it('expires the old open session and creates a new order for changed fulfillment data', async () => {
+      const first = await send(rundumBody())
+      const second = await send(rundumBody({
+        fulfillmentData: fulfillmentData({ firstName: 'Augusta' }),
+      }))
+      assert.equal(first.statusCode, 200)
+      assert.equal(second.statusCode, 200)
+      assert.notEqual(second.body.url, first.body.url)
+      assert.equal(stripe.sessions.get('cs_test_1').status, 'expired')
+      assert.deepEqual(db.orders.map((order) => order.status), ['failed', 'pending'])
+      assert.equal(db.fulfillments.get(db.orders[1].id).first_name, 'Augusta')
+      assert.equal(db.orders[1].stripe_checkout_session_id, 'cs_test_2')
+    })
+
+    it('keeps an existing order and updates data if no Stripe session has been created yet', async () => {
+      stripe.failCreate = true
+      assert.equal((await send(rundumBody())).statusCode, 502)
+      const orderId = db.orders[0].id
+      stripe.failCreate = false
+
+      const retry = await send(rundumBody({
+        fulfillmentData: fulfillmentData({ firstName: 'Augusta' }),
+      }))
+      assert.equal(retry.statusCode, 200)
+      assert.equal(db.orders.length, 1)
+      assert.equal(db.orders[0].id, orderId)
+      assert.equal(db.fulfillments.get(orderId).first_name, 'Augusta')
+      assert.equal(stripe.sessions.size, 1)
+    })
+
+    it('leaves the old order and details untouched if its session cannot be expired', async () => {
+      await send(rundumBody())
+      stripe.failExpire = true
+      const res = await send(rundumBody({
+        fulfillmentData: fulfillmentData({ firstName: 'Augusta' }),
+      }))
+      assert.equal(res.statusCode, 409)
+      assert.equal(db.orders.length, 1)
+      assert.equal(db.orders[0].status, 'pending')
+      assert.equal(db.fulfillments.get(db.orders[0].id).first_name, 'Ada')
+      assert.equal(stripe.sessions.get('cs_test_1').status, 'open')
+    })
+
+    it('never changes paid or completed orders for changed fulfillment data', async () => {
+      await send(rundumBody())
+      const order = db.orders[0]
+      const savedBefore = { ...db.fulfillments.get(order.id) }
+      order.status = 'paid'
+      db.drafts[0].status = 'locked'
+
+      const res = await send(rundumBody({
+        fulfillmentData: fulfillmentData({ firstName: 'Augusta' }),
+      }))
+      assert.equal(res.statusCode, 409)
+      assert.deepEqual(db.fulfillments.get(order.id), savedBefore)
+      assert.equal(stripe.sessions.size, 1)
+    })
+
+    it('does not replace a completed Stripe session', async () => {
+      await send(rundumBody())
+      stripe.sessions.get('cs_test_1').status = 'complete'
+      const res = await send(rundumBody({
+        fulfillmentData: fulfillmentData({ firstName: 'Augusta' }),
+      }))
+      assert.equal(res.statusCode, 409)
+      assert.equal(db.orders.length, 1)
+      assert.equal(db.orders[0].status, 'pending')
+      assert.equal(db.fulfillments.get(db.orders[0].id).first_name, 'Ada')
+      assert.equal(stripe.sessions.size, 1)
+    })
+
+    it('allows only the request matching the stored data to succeed when requests race', async () => {
+      let release
+      let waiting = 0
+      const bothCreating = new Promise((resolve) => {
+        release = resolve
+      })
+      const createSession = stripe.checkout.sessions.create
+      stripe.checkout.sessions.create = async (...args) => {
+        waiting += 1
+        if (waiting === 2) release()
+        await bothCreating
+        return createSession(...args)
+      }
+
+      const [first, second] = await Promise.all([
+        send(rundumBody()),
+        send(rundumBody({ fulfillmentData: fulfillmentData({ firstName: 'Augusta' }) })),
+      ])
+      const responses = [first, second]
+      assert.equal(responses.filter((response) => response.statusCode === 200).length, 1)
+      assert.equal(responses.filter((response) => response.statusCode === 409).length, 1)
+      assert.equal(db.orders.filter((order) => order.status === 'pending').length, 1)
+      assert.equal(stripe.sessions.size, 1)
+      assert.equal(stripe.sessions.get('cs_test_1').status, 'open')
+      const winner = first.statusCode === 200 ? 'Ada' : 'Augusta'
+      assert.equal(db.fulfillments.get(db.orders.find((order) => order.status === 'pending').id).first_name, winner)
+    })
+
+    it('rejects fulfillment data for the other packages', async () => {
+      const res = await send(validBody({
+        package: 'artist-band-code-and-go',
+        fulfillmentData: fulfillmentData(),
+      }))
+      assert.equal(res.statusCode, 400)
+      assert.equal(db.orders.length, 0)
+      assert.equal(stripe.createCalls, 0)
     })
   })
 
@@ -153,11 +355,11 @@ describe('POST /api/checkout', () => {
 
     it('uses the shared Business package definitions for both offers', async () => {
       const entries = [
-        ['business-pure-code', BUSINESS_DRAFT_ID],
-        ['business-rundum-sorglos', OTHER_BUSINESS_DRAFT_ID],
+        ['business-pure-code', BUSINESS_DRAFT_ID, 29900],
+        ['business-rundum-sorglos', OTHER_BUSINESS_DRAFT_ID, 47900],
       ]
 
-      for (const [packageCode, draftId] of entries) {
+      for (const [packageCode, draftId, expectedAmountCents] of entries) {
         const draftToken = addBusinessDraft(draftId, validBusinessData)
         const res = await send({
           builder: 'business',
@@ -170,6 +372,7 @@ describe('POST /api/checkout', () => {
         const pkg = packages[packageCode]
         const order = db.orders.find((item) => item.draft_id === draftId)
         assert.equal(pkg.builderSlug, 'business')
+        assert.equal(pkg.amountCents, expectedAmountCents)
         assert.equal(order.package_code, pkg.code)
         assert.equal(order.amount_cents, pkg.amountCents)
         const params = stripe.sessions.get(order.stripe_checkout_session_id).params
@@ -380,17 +583,23 @@ describe('POST /api/checkout', () => {
 
     it('expires the old session and retires the old order when the package changes', async () => {
       await send(validBody())
-      const second = await send(validBody({ package: 'artist-band-rundum-sorglos' }))
+      const second = await send(validBody({
+        package: 'artist-band-rundum-sorglos',
+        fulfillmentData: fulfillmentData(),
+      }))
       assert.equal(second.statusCode, 200)
       assert.equal(stripe.sessions.get('cs_test_1').status, 'expired')
       assert.deepEqual(db.orders.map((o) => o.status), ['failed', 'pending'])
-      assert.equal(db.orders[1].amount_cents, 39900)
+      assert.equal(db.orders[1].amount_cents, 7900)
     })
 
     it('keeps the order untouched when the old session cannot be expired', async () => {
       await send(validBody())
       stripe.failExpire = true
-      const res = await send(validBody({ package: 'artist-band-rundum-sorglos' }))
+      const res = await send(validBody({
+        package: 'artist-band-rundum-sorglos',
+        fulfillmentData: fulfillmentData(),
+      }))
       assert.equal(res.statusCode, 409)
       assert.equal(db.orders.length, 1)
       assert.equal(db.orders[0].status, 'pending')
@@ -521,7 +730,7 @@ describe('POST /api/checkout', () => {
         id: preparedId,
         draft_id: DRAFT_ID,
         package_code: 'artist-band-code-and-go',
-        amount_cents: 24900,
+        amount_cents: 3900,
         currency: 'EUR',
         status: 'pending',
         stripe_checkout_session_id: null,

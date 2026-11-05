@@ -105,6 +105,48 @@ describe('draft API', () => {
       assert.equal((await get(draftId, draftToken)).body.data, null)
     })
 
+    it('restores saved pending fulfillment through the existing authorized draft GET', async () => {
+      const { draftId, draftToken } = await createDraftOk()
+      db.orders.push({
+        id: '77777777-7777-4777-8777-777777777777',
+        draft_id: draftId,
+        package_code: 'artist-band-rundum-sorglos',
+        status: 'pending',
+        stripe_checkout_session_id: 'cs_test_existing',
+        created_at: new Date('2026-01-01T00:00:00Z'),
+      })
+      db.fulfillments.set(db.orders[0].id, {
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        billing_street: '1 Musterstraße',
+        billing_postal_code: '10115',
+        billing_city: 'Berlin',
+        billing_country_code: 'DE',
+        communication_email: 'ada@example.de',
+        desired_domain: 'ada-example.de',
+        alternative_domain: null,
+        domain_holder_differs: false,
+        domain_holder_first_name: null,
+        domain_holder_last_name: null,
+        domain_holder_street: null,
+        domain_holder_postal_code: null,
+        domain_holder_city: null,
+        domain_holder_country_code: null,
+        domain_holder_email: null,
+        hostinger_consent_version: 'hostinger-setup-v1',
+        hostinger_consented_at: new Date('2026-01-01T00:00:00Z'),
+        fulfillment_status: 'pending',
+      })
+
+      const loaded = await get(draftId, draftToken)
+      assert.equal(loaded.statusCode, 200)
+      assert.equal(loaded.body.fulfillmentData.firstName, 'Ada')
+      assert.equal(loaded.body.fulfillmentData.communicationEmail, 'ada@example.de')
+      assert.equal(loaded.body.fulfillmentData.hostingerConsent, true)
+      assert.equal('hostinger_consent_version' in loaded.body.fulfillmentData, false)
+      assert.equal('fulfillment_status' in loaded.body.fulfillmentData, false)
+    })
+
     it('saves incomplete and complete Business data through the existing draft API', async () => {
       const { draftId, draftToken } = await createDraftOk('business')
       const businessDraft = createDraftHandler({ getDb: () => db, storage, generators: defaultGenerators })

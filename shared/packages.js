@@ -7,13 +7,13 @@ export const packages = Object.freeze({
     code: 'artist-band-code-and-go',
     builderSlug: 'artist-band',
     name: 'Code & Go',
-    amountCents: 24900,
+    amountCents: 3900,
   },
   'artist-band-rundum-sorglos': {
     code: 'artist-band-rundum-sorglos',
     builderSlug: 'artist-band',
     name: 'Rundum sorglos',
-    amountCents: 39900,
+    amountCents: 7900,
   },
   'business-pure-code': {
     code: 'business-pure-code',

@@ -1,5 +1,6 @@
 const POLL_INTERVAL_MS = 4000
 const MAX_POLLS = 45
+const RUNDUM_PACKAGE_CODE = 'artist-band-rundum-sorglos'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TOKEN = /^[A-Za-z0-9_-]{43}$/
@@ -71,6 +72,12 @@ export function renderOrderComplete(app) {
           <h1 id="oc-title">Deine Bestellung</h1>
           <p id="oc-message" class="ab-status" data-kind="pending">Bestellstatus wird geprüft …</p>
           <p id="oc-notice" class="ab-field-hint" hidden></p>
+          <div id="oc-confirmation" class="oc-confirmation" hidden>
+            <p>Vielen Dank für deine Bestellung. Bitte lade deine Auftragsbestätigung als PDF herunter und sende sie als Anhang per E-Mail an:</p>
+            <p class="oc-contact-email">kontakt@matthiasbrehm.de</p>
+            <p>Sobald uns deine vollständigen Angaben vorliegen, beginnen wir mit der Einrichtung deiner Website.</p>
+            <button id="oc-confirmation-download" class="ab-checkout-button" type="button">Auftragsbestätigung als PDF herunterladen <span aria-hidden="true">↓</span></button>
+          </div>
           <div class="oc-actions">
             <button id="oc-download" class="ab-checkout-button" type="button" hidden>Website herunterladen <span aria-hidden="true">↓</span></button>
             <button id="oc-refresh" class="ab-text-button" type="button" hidden>Status erneut prüfen</button>
@@ -83,6 +90,8 @@ export function renderOrderComplete(app) {
   const message = app.querySelector('#oc-message')
   const notice = app.querySelector('#oc-notice')
   const downloadButton = app.querySelector('#oc-download')
+  const confirmationPanel = app.querySelector('#oc-confirmation')
+  const confirmationDownloadButton = app.querySelector('#oc-confirmation-download')
   const refreshButton = app.querySelector('#oc-refresh')
   const builderLink = app.querySelector('#oc-builder')
   let polls = 0
@@ -130,12 +139,18 @@ export function renderOrderComplete(app) {
       notice.hidden = false
     }
 
-    if (order.status === 'paid' && order.downloadAvailable) {
+    if (order.status === 'paid' && order.package?.code === RUNDUM_PACKAGE_CODE) {
+      show('Deine Zahlung wurde bestätigt!', 'success')
+      confirmationPanel.hidden = false
+      downloadButton.hidden = !order.downloadAvailable
+    } else if (order.status === 'paid' && order.downloadAvailable) {
       show(`Zahlung bestätigt${order.package ? ` – Paket „${order.package.name}“` : ''}. Deine Website steht bereit.`, 'success')
+      confirmationPanel.hidden = true
       downloadButton.hidden = false
     } else if (order.status === 'pending') {
       polls += 1
       downloadButton.hidden = true
+      confirmationPanel.hidden = true
 
       if (polls >= MAX_POLLS) {
         show('Die Zahlungsbestätigung steht noch aus. Das kann bei manchen Zahlungsarten etwas dauern. Du kannst den Status später erneut prüfen.', 'pending')
@@ -153,6 +168,7 @@ export function renderOrderComplete(app) {
       schedule()
     } else {
       downloadButton.hidden = true
+      confirmationPanel.hidden = true
       show(
         order.status === 'none'
           ? 'Es wurde noch keine Bestellung gestartet. Ein Download ist nicht möglich.'
@@ -192,6 +208,41 @@ export function renderOrderComplete(app) {
       show('Der Download ist fehlgeschlagen. Bitte versuche es erneut.', 'error')
     } finally {
       downloadButton.disabled = false
+    }
+  })
+
+  confirmationDownloadButton.addEventListener('click', async () => {
+    confirmationDownloadButton.disabled = true
+    show('Auftragsbestätigung wird vorbereitet …', 'pending')
+
+    try {
+      const response = await postJson('/api/orders/confirmation', credentials)
+
+      if (!response.ok) {
+        const code = (await response.json().catch(() => ({}))).code
+        show(
+          code === 'not_paid'
+            ? 'Die Zahlung ist noch nicht bestätigt.'
+            : 'Die Auftragsbestätigung konnte gerade nicht bereitgestellt werden. Bitte versuche es später erneut.',
+          'error',
+        )
+        return
+      }
+
+      const url = URL.createObjectURL(await response.blob())
+      const link = Object.assign(document.createElement('a'), {
+        href: url,
+        download: 'auftragsbestaetigung-rundum-sorglos.pdf',
+      })
+      document.body.append(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      show('Auftragsbestätigung heruntergeladen.', 'success')
+    } catch {
+      show('Der PDF-Download ist fehlgeschlagen. Bitte versuche es erneut.', 'error')
+    } finally {
+      confirmationDownloadButton.disabled = false
     }
   })
 
