@@ -36,6 +36,22 @@ const fulfillmentData = (overrides = {}) => ({
   hostingerConsent: true,
   ...overrides,
 })
+const businessFulfillmentData = (overrides = {}) => ({
+  customerType: 'company',
+  companyName: 'Musterbetrieb GmbH',
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  billingStreet: '1 Musterstraße',
+  billingPostalCode: '10115',
+  billingCity: 'Berlin',
+  billingCountryCode: 'DE',
+  communicationEmail: 'ada@example.de',
+  desiredDomain: 'musterbetrieb.de',
+  alternativeDomain: null,
+  domainHolderDiffers: false,
+  hostingerConsent: true,
+  ...overrides,
+})
 
 describe('POST /api/checkout', () => {
   let db
@@ -353,6 +369,17 @@ describe('POST /api/checkout', () => {
       })
     })
 
+    const businessRundumBody = (draftId = BUSINESS_DRAFT_ID, fulfillment = businessFulfillmentData()) => {
+      const draftToken = addBusinessDraft(draftId, validBusinessData)
+      return {
+        builder: 'business',
+        package: 'business-rundum-sorglos',
+        draftId,
+        draftToken,
+        fulfillmentData: fulfillment,
+      }
+    }
+
     it('uses the shared Business package definitions for both offers', async () => {
       const entries = [
         ['business-pure-code', BUSINESS_DRAFT_ID, 29900],
@@ -361,12 +388,14 @@ describe('POST /api/checkout', () => {
 
       for (const [packageCode, draftId, expectedAmountCents] of entries) {
         const draftToken = addBusinessDraft(draftId, validBusinessData)
-        const res = await send({
+        const request = {
           builder: 'business',
           package: packageCode,
           draftId,
           draftToken,
-        })
+          ...(packageCode === 'business-rundum-sorglos' && { fulfillmentData: businessFulfillmentData() }),
+        }
+        const res = await send(request)
 
         assert.equal(res.statusCode, 200)
         const pkg = packages[packageCode]
@@ -381,7 +410,99 @@ describe('POST /api/checkout', () => {
         assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled&builder=business`)
         assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, new RegExp(draftToken))
         assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, new RegExp(draftId))
+        if (packageCode === 'business-rundum-sorglos') {
+          assert.equal(db.fulfillments.get(order.id).customer_type, 'company')
+          assert.equal(db.fulfillments.get(order.id).company_name, 'Musterbetrieb GmbH')
+        } else {
+          assert.equal(db.fulfillments.has(order.id), false)
+        }
       }
+    })
+
+    it('requires and validates Business Rundum-Sorglos fulfillment before order creation', async () => {
+      const missingBody = businessRundumBody(OTHER_BUSINESS_DRAFT_ID)
+      delete missingBody.fulfillmentData
+      const missing = await send(missingBody)
+      const invalid = await send(businessRundumBody(BUSINESS_DRAFT_ID, businessFulfillmentData({
+        desiredDomain: 'not-a-de-domain.com',
+      })))
+      assert.equal(missing.statusCode, 400)
+      assert.equal(invalid.statusCode, 400)
+      assert.equal(db.orders.length, 0)
+      assert.equal(db.fulfillments.size, 0)
+      assert.equal(stripe.createCalls, 0)
+    })
+
+    it('stores Business fulfillment before creating the Stripe session and uses the configured price', async () => {
+      const createSession = stripe.checkout.sessions.create
+      stripe.checkout.sessions.create = async (...args) => {
+        assert.equal(db.fulfillments.size, 1)
+        const [orderId, saved] = [...db.fulfillments.entries()][0]
+        assert.equal(orderId, db.orders[0].id)
+        assert.equal(saved.customer_type, 'company')
+        assert.equal(saved.company_name, 'Musterbetrieb GmbH')
+        assert.equal(saved.communication_email, 'ada@example.de')
+        assert.equal(saved.hostinger_consent_version, HOSTINGER_CONSENT_VERSION)
+        return createSession(...args)
+      }
+
+      const res = await send(businessRundumBody())
+      assert.equal(res.statusCode, 200)
+      assert.equal(db.orders[0].amount_cents, 47900)
+      assert.equal(stripe.sessions.get('cs_test_1').params.line_items[0].price_data.unit_amount, 47900)
+      assert.doesNotMatch(JSON.stringify(stripe.sessions.get('cs_test_1').params), /Musterbetrieb|Ada|ada@example/)
+    })
+
+    it('reuses an open Business session when fulfillment data is unchanged', async () => {
+      const body = businessRundumBody()
+      const first = await send(body)
+      const savedBefore = { ...db.fulfillments.get(db.orders[0].id) }
+      const second = await send(body)
+      assert.equal(first.statusCode, 200)
+      assert.equal(second.statusCode, 200)
+      assert.equal(second.body.url, first.body.url)
+      assert.equal(db.orders.length, 1)
+      assert.equal(stripe.sessions.size, 1)
+      assert.deepEqual(db.fulfillments.get(db.orders[0].id), savedBefore)
+    })
+
+    it('expires the existing Business session when fulfillment data changes', async () => {
+      const body = businessRundumBody()
+      const first = await send(body)
+      const second = await send({ ...body, fulfillmentData: businessFulfillmentData({
+        companyName: 'Geänderter Betrieb GmbH',
+      }) })
+      assert.equal(first.statusCode, 200)
+      assert.equal(second.statusCode, 200)
+      assert.notEqual(second.body.url, first.body.url)
+      assert.equal(stripe.sessions.get('cs_test_1').status, 'expired')
+      assert.deepEqual(db.orders.map((order) => order.status), ['failed', 'pending'])
+      assert.equal(db.fulfillments.get(db.orders[1].id).company_name, 'Geänderter Betrieb GmbH')
+    })
+
+    it('creates only one Business order and Stripe session for parallel identical requests', async () => {
+      const body = businessRundumBody()
+      const [first, second, third] = await Promise.all([send(body), send(body), send(body)])
+      assert.deepEqual([first.statusCode, second.statusCode, third.statusCode], [200, 200, 200])
+      assert.equal(first.body.url, second.body.url)
+      assert.equal(first.body.url, third.body.url)
+      assert.equal(db.orders.filter((order) => order.status === 'pending').length, 1)
+      assert.equal(stripe.sessions.size, 1)
+      assert.equal(db.fulfillments.size, 1)
+    })
+
+    it('rejects fulfillment data attached to Business Pure Code', async () => {
+      const draftToken = addBusinessDraft(BUSINESS_DRAFT_ID, validBusinessData)
+      const res = await send({
+        builder: 'business',
+        package: 'business-pure-code',
+        draftId: BUSINESS_DRAFT_ID,
+        draftToken,
+        fulfillmentData: businessFulfillmentData(),
+      })
+      assert.equal(res.statusCode, 400)
+      assert.equal(db.orders.length, 0)
+      assert.equal(stripe.createCalls, 0)
     })
 
     it('rejects missing company name or contact email before creating an order or Stripe session', async () => {

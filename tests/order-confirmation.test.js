@@ -35,6 +35,17 @@ const fulfillment = {
   hostinger_consented_at: new Date('2026-10-25T10:30:00.000Z'),
 }
 
+const businessFulfillment = {
+  ...fulfillment,
+  desired_domain: 'musterbetrieb.de',
+  customer_type: 'company',
+  company_name: 'Musterbetrieb GmbH',
+  domain_holder_type: 'organization',
+  domain_holder_organization_name: 'Beispiel Verein eV',
+  domain_holder_first_name: null,
+  domain_holder_last_name: null,
+}
+
 function paidOrder(overrides = {}) {
   return {
     id: ORDER_ID,
@@ -174,6 +185,68 @@ describe('POST /api/orders/confirmation', () => {
     assert.ok((await PDFDocument.load(pdf)).getPageCount() > 1)
   })
 
+  it('creates a Business company confirmation with actual order amount and organization holder details', async () => {
+    db.orders[0] = paidOrder({
+      package_code: 'business-rundum-sorglos',
+      amount_cents: 48123,
+    })
+    db.fulfillments.set(ORDER_ID, businessFulfillment)
+    const response = await send(credentials())
+
+    assert.equal(response.statusCode, 200)
+    assert.equal((await PDFDocument.load(response.body)).getPageCount(), 1)
+    const content = decodedText(response.body)
+    for (const expected of [
+      'Bestellnummer',
+      'Bestelldatum',
+      'Business',
+      'Rundum Sorglos',
+      '481,23',
+      'Bezahlt',
+      'Unternehmen',
+      'Musterbetrieb GmbH',
+      'Ada Beispiel',
+      'ada@example.de',
+      'musterbetrieb.de',
+      'Organisation: Beispiel Verein eV',
+      'keine Rechnung',
+      'hostinger-setup-v1',
+      'Hostingkosten.',
+      'Domainverlängerung.',
+    ]) {
+      assert.ok(content.includes(expected), `Business PDF should contain ${expected}`)
+    }
+    assert.equal(content.includes('Ada & Die Beispiele'), false)
+  })
+
+  it('creates a self-employed confirmation with a person domain holder and long fields on clean extra pages', async () => {
+    const long = (length) => 'L'.repeat(length)
+    const pdf = await createOrderConfirmationPdf({
+      order: paidOrder({ package_code: 'business-rundum-sorglos', amount_cents: 47900 }),
+      amountCents: 47900,
+      fulfillment: {
+        ...businessFulfillment,
+        customer_type: 'self_employed',
+        company_name: null,
+        communication_email: `${long(230)}@example.de`,
+        billing_street: long(200),
+        domain_holder_differs: true,
+        domain_holder_type: 'person',
+        domain_holder_organization_name: null,
+        domain_holder_first_name: 'Grace',
+        domain_holder_last_name: 'Hopper',
+        domain_holder_street: long(200),
+        domain_holder_email: `${long(230)}@example.de`,
+      },
+    })
+    const document = await PDFDocument.load(pdf)
+    assert.ok(document.getPageCount() > 1)
+    const content = decodedText(Buffer.from(pdf))
+    assert.ok(content.includes('Selbstst') && content.includes('Person'))
+    assert.ok(content.includes('Grace Hopper'))
+    assert.ok(!content.includes('Musterbetrieb GmbH'))
+  })
+
   it('does not disclose fulfillment for an unpaid order', async () => {
     db.orders[0].status = 'pending'
     const response = await send(credentials())
@@ -208,6 +281,21 @@ describe('POST /api/orders/confirmation', () => {
     db.orders[0].package_code = 'artist-band-code-and-go'
     const response = await send(credentials())
     assert.equal(response.statusCode, 404)
+    assert.equal(db.queries.some((query) => query.includes('FROM order_fulfillment WHERE order_id')), false)
+  })
+
+  it('does not provide a Business confirmation to an unauthorized or unpaid draft', async () => {
+    db.orders[0].package_code = 'business-rundum-sorglos'
+    db.fulfillments.set(ORDER_ID, businessFulfillment)
+
+    const unauthorized = await send(credentials({ draftToken: otherToken }))
+    assert.equal(unauthorized.statusCode, 404)
+    assert.equal(db.queries.some((query) => query.includes('FROM order_fulfillment WHERE order_id')), false)
+
+    db.orders[0].status = 'pending'
+    const unpaid = await send(credentials())
+    assert.equal(unpaid.statusCode, 402)
+    assert.equal(unpaid.body.code, 'not_paid')
     assert.equal(db.queries.some((query) => query.includes('FROM order_fulfillment WHERE order_id')), false)
   })
 

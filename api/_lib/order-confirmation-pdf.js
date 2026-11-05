@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { BUSINESS_FULFILLMENT_PACKAGE_CODE, FULFILLMENT_PACKAGE_CODE } from './fulfillment.js'
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
@@ -91,12 +92,19 @@ function sectionHeight(section) {
 }
 
 export async function createOrderConfirmationPdf({ order, fulfillment, amountCents, artistName }) {
+  const isBusiness = order.package_code === BUSINESS_FULFILLMENT_PACKAGE_CODE
+  if (!isBusiness && order.package_code !== FULFILLMENT_PACKAGE_CODE) {
+    throw new Error('Unsupported order confirmation package')
+  }
+
   const document = await PDFDocument.create()
   const regular = await document.embedFont(StandardFonts.Helvetica)
   const bold = await document.embedFont(StandardFonts.HelveticaBold)
   document.setTitle('Auftragsbestätigung – Rundum Sorglos')
   document.setAuthor('LeanWebsite Studio')
-  document.setSubject('Auftragsbestätigung Artist & Band – Rundum Sorglos')
+  document.setSubject(isBusiness
+    ? 'Auftragsbestätigung Business – Rundum Sorglos'
+    : 'Auftragsbestätigung Artist & Band – Rundum Sorglos')
 
   const formattedPrice = new Intl.NumberFormat('de-DE', {
     style: 'currency',
@@ -109,15 +117,24 @@ export async function createOrderConfirmationPdf({ order, fulfillment, amountCen
       entries: [
         field('Bestellnummer', order.id),
         field('Bestelldatum', formatDate(order.created_at)),
-        ...(artistName ? [field('Künstler-/Bandname', artistName)] : []),
-        field('Paket', 'Artist & Band – Rundum Sorglos'),
+        ...(!isBusiness && artistName ? [field('Künstler-/Bandname', artistName)] : []),
+        field('Paket', isBusiness ? 'Business – Rundum Sorglos' : 'Artist & Band – Rundum Sorglos'),
         field('Einmaliger Paketpreis', formattedPrice),
         field('Zahlungsstatus', 'Bezahlt'),
+        ...(isBusiness ? [field('Dokumenthinweis', 'Auftragsbestätigung – keine Rechnung')] : []),
       ],
     },
     {
       title: 'Auftraggeber',
       entries: [
+        ...(isBusiness
+          ? [
+            field('Auftraggebertyp', fulfillment.customer_type === 'company'
+              ? 'Unternehmen'
+              : 'Selbstständige Person'),
+            ...(fulfillment.company_name ? [field('Firma / Geschäftsbezeichnung', fulfillment.company_name)] : []),
+          ]
+          : []),
         field('Name', `${fulfillment.first_name} ${fulfillment.last_name}`),
         field('Rechnungsanschrift', [
           fulfillment.billing_street,
@@ -136,7 +153,13 @@ export async function createOrderConfirmationPdf({ order, fulfillment, amountCen
           : []),
         ...(fulfillment.domain_holder_differs
           ? [field('Abweichender Domaininhaber', [
-            `${fulfillment.domain_holder_first_name} ${fulfillment.domain_holder_last_name}`,
+            ...(fulfillment.domain_holder_type === 'organization'
+              ? [isBusiness
+                ? `Organisation: ${fulfillment.domain_holder_organization_name}`
+                : fulfillment.domain_holder_organization_name]
+              : [isBusiness
+                ? `Person: ${fulfillment.domain_holder_first_name} ${fulfillment.domain_holder_last_name}`
+                : `${fulfillment.domain_holder_first_name} ${fulfillment.domain_holder_last_name}`]),
             fulfillment.domain_holder_street,
             `${fulfillment.domain_holder_postal_code} ${fulfillment.domain_holder_city}`,
             fulfillment.domain_holder_country_code,

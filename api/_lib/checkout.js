@@ -7,6 +7,7 @@ import { CURRENCY, getPackage } from './packages.js'
 import { getObject, orderSnapshotKey, putObject } from './storage.js'
 import { isWellFormedToken } from './tokens.js'
 import {
+  BUSINESS_FULFILLMENT_PACKAGE_CODE,
   FULFILLMENT_PACKAGE_CODE,
   fulfillmentDataMatches,
   loadOrderFulfillmentForOrder,
@@ -344,10 +345,11 @@ export async function createCheckoutSession({
   const draft = await loadAuthorizedDraft(sql, request)
   const pkg = resolvePackage(draft, request)
   const requiresFulfillment = pkg.code === FULFILLMENT_PACKAGE_CODE
+    || pkg.code === BUSINESS_FULFILLMENT_PACKAGE_CODE
   if (!requiresFulfillment && Object.hasOwn(request, 'fulfillmentData')) {
     throw new CheckoutError(400, 'Fulfillment data is only accepted for Rundum-Sorglos orders')
   }
-  const fulfillmentData = requiresFulfillment ? validateFulfillmentData(request.fulfillmentData) : null
+  const fulfillmentData = requiresFulfillment ? validateFulfillmentData(request.fulfillmentData, pkg.code) : null
   const content = await readDraftContent({ storage, draft, generators, year })
   const context = { sql, stripe, siteUrl, draft, pkg, storage, content }
 

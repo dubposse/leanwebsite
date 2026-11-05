@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
 import {
+  BUSINESS_FULFILLMENT_PACKAGE_CODE,
   FULFILLMENT_PACKAGE_CODE,
   HOSTINGER_CONSENT_VERSION,
   loadOrderFulfillment,
@@ -78,6 +79,10 @@ function createFulfillmentDb() {
           'domain_holder_city',
           'domain_holder_country_code',
           'domain_holder_email',
+          'customer_type',
+          'company_name',
+          'domain_holder_type',
+          'domain_holder_organization_name',
           'hostinger_consent_version',
           'hostinger_consented_at',
         ]
@@ -113,6 +118,22 @@ function createFulfillmentDb() {
   }
 
   return { db, sql, token: access.token, fulfillment }
+}
+
+function businessData(overrides = {}) {
+  return validData({
+    customerType: 'company',
+    companyName: ' Example GmbH ',
+    ...overrides,
+  })
+}
+
+function createBusinessFulfillmentDb() {
+  const fixture = createFulfillmentDb()
+  fixture.db.builders[0].slug = 'business'
+  fixture.db.builders[0].name = 'Business'
+  fixture.db.orders[0].package_code = BUSINESS_FULFILLMENT_PACKAGE_CODE
+  return fixture
 }
 
 describe('fulfillment data validation', () => {
@@ -198,6 +219,92 @@ describe('fulfillment data validation', () => {
       fulfillmentStatus: 'completed',
     })), { statusCode: 400 })
   })
+
+  it('validates and normalizes Business company and self-employed data', () => {
+    assert.deepEqual(validateFulfillmentData(businessData(), BUSINESS_FULFILLMENT_PACKAGE_CODE), {
+      customer_type: 'company',
+      company_name: 'Example GmbH',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      billing_street: '1 Musterstraße',
+      billing_postal_code: '10115',
+      billing_city: 'Berlin',
+      billing_country_code: 'DE',
+      communication_email: 'ada@example.de',
+      desired_domain: 'example.de',
+      alternative_domain: null,
+      domain_holder_differs: false,
+      domain_holder_first_name: null,
+      domain_holder_last_name: null,
+      domain_holder_street: null,
+      domain_holder_postal_code: null,
+      domain_holder_city: null,
+      domain_holder_country_code: null,
+      domain_holder_email: null,
+      domain_holder_type: null,
+      domain_holder_organization_name: null,
+    })
+
+    const selfEmployed = validateFulfillmentData(
+      businessData({ customerType: 'self_employed', companyName: '' }),
+      BUSINESS_FULFILLMENT_PACKAGE_CODE,
+    )
+    assert.equal(selfEmployed.customer_type, 'self_employed')
+    assert.equal(selfEmployed.company_name, null)
+  })
+
+  it('validates person and organization domain holders for Business', () => {
+    const person = validateFulfillmentData(businessData({
+      domainHolderDiffers: true,
+      domainHolderType: 'person',
+      domainHolderFirstName: ' Grace ',
+      domainHolderLastName: ' Hopper ',
+      domainHolderStreet: ' 2 Another Street ',
+      domainHolderPostalCode: ' 20095 ',
+      domainHolderCity: ' Hamburg ',
+      domainHolderCountryCode: 'de',
+      domainHolderEmail: ' GRACE@EXAMPLE.DE ',
+    }), BUSINESS_FULFILLMENT_PACKAGE_CODE)
+    assert.equal(person.domain_holder_type, 'person')
+    assert.equal(person.domain_holder_first_name, 'Grace')
+    assert.equal(person.domain_holder_organization_name, null)
+
+    const organization = validateFulfillmentData(businessData({
+      domainHolderDiffers: true,
+      domainHolderType: 'organization',
+      domainHolderOrganizationName: ' Example e.V. ',
+      domainHolderStreet: ' 2 Another Street ',
+      domainHolderPostalCode: ' 20095 ',
+      domainHolderCity: ' Hamburg ',
+      domainHolderCountryCode: 'de',
+      domainHolderEmail: ' INFO@EXAMPLE.DE ',
+    }), BUSINESS_FULFILLMENT_PACKAGE_CODE)
+    assert.equal(organization.domain_holder_type, 'organization')
+    assert.equal(organization.domain_holder_organization_name, 'Example e.V.')
+    assert.equal(organization.domain_holder_first_name, null)
+  })
+
+  it('rejects incomplete or conflicting Business fields', () => {
+    for (const overrides of [
+      { customerType: undefined },
+      { companyName: '' },
+      { companyName: 'x'.repeat(201) },
+      { customerType: 'self_employed', companyName: 'Not allowed Ltd' },
+      { desiredDomain: '' },
+      { domainHolderDiffers: true, domainHolderType: 'organization' },
+      { domainHolderDiffers: true, domainHolderType: 'organization', domainHolderOrganizationName: 'Org' },
+      { domainHolderDiffers: true, domainHolderType: 'organization', domainHolderOrganizationName: 'Org', domainHolderFirstName: 'Ada' },
+      { domainHolderDiffers: true, domainHolderType: 'company' },
+    ]) {
+      assert.throws(
+        () => validateFulfillmentData(businessData(overrides), BUSINESS_FULFILLMENT_PACKAGE_CODE),
+        { statusCode: 400 },
+      )
+    }
+
+    assert.throws(() => validateFulfillmentData(businessData(), FULFILLMENT_PACKAGE_CODE), { statusCode: 400 })
+    assert.throws(() => validateFulfillmentData(validData(), BUSINESS_FULFILLMENT_PACKAGE_CODE), { statusCode: 400 })
+  })
 })
 
 describe('authorized fulfillment helpers', () => {
@@ -258,7 +365,7 @@ describe('authorized fulfillment helpers', () => {
     assert.equal(sql.queries.some(({ text }) => text.includes('order_fulfillment')), false)
   })
 
-  it('rejects other packages and business drafts', async () => {
+  it('rejects other packages and returns no Business data without a matching order', async () => {
     db.orders[0].package_code = 'artist-band-code-and-go'
     assert.deepEqual(await loadOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token }), { data: null })
 
@@ -270,13 +377,19 @@ describe('authorized fulfillment helpers', () => {
       status: 'draft',
       access_token_hash: business.hash,
     })
+    assert.deepEqual(await loadOrderFulfillment({
+      sql,
+      draftId: '55555555-5555-4555-8555-555555555555',
+      draftToken: business.token,
+    }), { data: null })
     await assert.rejects(
-      loadOrderFulfillment({
+      saveOrderFulfillment({
         sql,
         draftId: '55555555-5555-4555-8555-555555555555',
         draftToken: business.token,
+        data: businessData(),
       }),
-      { statusCode: 404 },
+      { statusCode: 409 },
     )
   })
 
@@ -287,5 +400,92 @@ describe('authorized fulfillment helpers', () => {
       { statusCode: 409 },
     )
     assert.equal(fulfillment.size, 0)
+  })
+
+  it('saves and restores Business fulfillment with an organization domain holder', async () => {
+    ;({ db, sql, token, fulfillment } = createBusinessFulfillmentDb())
+    const data = businessData({
+      domainHolderDiffers: true,
+      domainHolderType: 'organization',
+      domainHolderOrganizationName: ' Example e.V. ',
+      domainHolderStreet: ' 2 Another Street ',
+      domainHolderPostalCode: ' 20095 ',
+      domainHolderCity: ' Hamburg ',
+      domainHolderCountryCode: 'de',
+      domainHolderEmail: ' INFO@EXAMPLE.DE ',
+    })
+
+    assert.deepEqual(await saveOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token, data }), {
+      orderId: ORDER_ID,
+    })
+    const stored = fulfillment.get(ORDER_ID)
+    assert.equal(stored.customer_type, 'company')
+    assert.equal(stored.company_name, 'Example GmbH')
+    assert.equal(stored.domain_holder_type, 'organization')
+    assert.equal(stored.domain_holder_organization_name, 'Example e.V.')
+    assert.equal(stored.domain_holder_first_name, null)
+
+    const loaded = await loadOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token })
+    assert.equal(loaded.data.customerType, 'company')
+    assert.equal(loaded.data.companyName, 'Example GmbH')
+    assert.equal(loaded.data.domainHolderType, 'organization')
+    assert.equal(loaded.data.domainHolderOrganizationName, 'Example e.V.')
+  })
+
+  it('saves and restores self-employed data with a person domain holder', async () => {
+    ;({ db, sql, token, fulfillment } = createBusinessFulfillmentDb())
+    const data = businessData({
+      customerType: 'self_employed',
+      companyName: '',
+      domainHolderDiffers: true,
+      domainHolderType: 'person',
+      domainHolderFirstName: ' Grace ',
+      domainHolderLastName: ' Hopper ',
+      domainHolderStreet: ' 2 Another Street ',
+      domainHolderPostalCode: ' 20095 ',
+      domainHolderCity: ' Hamburg ',
+      domainHolderCountryCode: 'de',
+      domainHolderEmail: ' GRACE@EXAMPLE.DE ',
+    })
+    await saveOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token, data })
+
+    const loaded = await loadOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token })
+    assert.equal(loaded.data.customerType, 'self_employed')
+    assert.equal(loaded.data.companyName, null)
+    assert.equal(loaded.data.domainHolderType, 'person')
+    assert.equal(loaded.data.domainHolderFirstName, 'Grace')
+  })
+
+  it('does not expose Business fulfillment to another token or package', async () => {
+    ;({ db, sql, token, fulfillment } = createBusinessFulfillmentDb())
+    await saveOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token, data: businessData() })
+    await assert.rejects(
+      loadOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: generateAccessToken().token }),
+      { statusCode: 404 },
+    )
+
+    db.orders[0].package_code = 'business-pure-code'
+    assert.deepEqual(await loadOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token }), { data: null })
+    db.orders[0].package_code = FULFILLMENT_PACKAGE_CODE
+    await assert.rejects(
+      saveOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token, data: businessData() }),
+      { statusCode: 409 },
+    )
+  })
+
+  it('keeps Business fulfillment immutable after payment', async () => {
+    ;({ db, sql, token, fulfillment } = createBusinessFulfillmentDb())
+    await saveOrderFulfillment({ sql, draftId: DRAFT_ID, draftToken: token, data: businessData() })
+    db.orders[0].status = 'paid'
+    await assert.rejects(
+      saveOrderFulfillment({
+        sql,
+        draftId: DRAFT_ID,
+        draftToken: token,
+        data: businessData({ companyName: 'Changed GmbH' }),
+      }),
+      { statusCode: 409 },
+    )
+    assert.equal(fulfillment.get(ORDER_ID).company_name, 'Example GmbH')
   })
 })

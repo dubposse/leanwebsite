@@ -113,6 +113,10 @@ export function createFakeDb() {
         'domain_holder_city',
         'domain_holder_country_code',
         'domain_holder_email',
+        'customer_type',
+        'company_name',
+        'domain_holder_type',
+        'domain_holder_organization_name',
         'hostinger_consent_version',
         'hostinger_consented_at',
       ]

@@ -1,5 +1,13 @@
 import { generateBusinessHtml } from '../shared/business-template.js'
 import { getPackagesForBuilder } from '../shared/packages.js'
+import {
+  BUSINESS_FULFILLMENT_PACKAGE_CODE,
+  collectBusinessFulfillment,
+  createBusinessCheckoutPayload,
+  HOSTINGER_CONSENT_TEXT,
+  resetBusinessFulfillment,
+  restoreBusinessFulfillment,
+} from './business-fulfillment.js'
 import './business-builder.css'
 
 const STORAGE_KEY = 'leanwebsite-business-builder-v1'
@@ -547,8 +555,110 @@ export function renderBusinessBuilder(app) {
               </div>
               <section class="business-purchase" aria-labelledby="business-purchase-title">
                 <h3 id="business-purchase-title">Deine Website kaufen</h3>
-                <p class="hint">Wähle ein Paket. Vor dem Checkout müssen Firmenname und E-Mail-Adresse angegeben sein.</p>
+                <p class="hint">Wähle ein Paket. Für den Checkout werden Firmenname (bei Unternehmen) und eine Kontakt-E-Mail im Website-Entwurf benötigt.</p>
                 <div class="package-options" id="business-packages" role="radiogroup" aria-label="Website-Paket"></div>
+                <form id="business-fulfillment" class="business-fulfillment" hidden novalidate>
+                  <fieldset id="business-fulfillment-fields" disabled>
+                    <legend>Auftragsangaben für Rundum sorglos</legend>
+                    <p class="hint">Diese Angaben werden getrennt von deinen Website-Inhalten nur für Hosting und Domainregistrierung verwendet. Die bestehende Domain aus dem Website-Entwurf wird nicht übernommen.</p>
+                    <label>Auftraggebertyp *
+                      <select name="customerType" required>
+                        <option value="company">Unternehmen</option>
+                        <option value="self_employed">Selbstständige Person</option>
+                      </select>
+                    </label>
+                    <label id="business-company-name-field">Firmenname / Geschäftsbezeichnung *
+                      <input name="companyName" maxlength="200" autocomplete="organization" required>
+                    </label>
+                    <div class="row">
+                      <label>Vorname *
+                        <input name="firstName" maxlength="100" autocomplete="given-name" required>
+                      </label>
+                      <label>Nachname *
+                        <input name="lastName" maxlength="100" autocomplete="family-name" required>
+                      </label>
+                    </div>
+                    <label>Straße und Hausnummer *
+                      <input name="billingStreet" maxlength="200" autocomplete="street-address" required>
+                    </label>
+                    <div class="row">
+                      <label>Postleitzahl *
+                        <input name="billingPostalCode" maxlength="20" autocomplete="postal-code" required>
+                      </label>
+                      <label>Ort *
+                        <input name="billingCity" maxlength="100" autocomplete="address-level2" required>
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label>Land (Ländercode) *
+                        <input name="billingCountryCode" maxlength="2" placeholder="DE" autocomplete="country" required>
+                      </label>
+                      <label>E-Mail für die Auftragskommunikation *
+                        <input name="communicationEmail" type="email" maxlength="254" autocomplete="email" required>
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label>Gewünschte neue .de-Domain *
+                        <input name="desiredDomain" maxlength="253" placeholder="dein-unternehmen.de" autocapitalize="none" spellcheck="false" required>
+                      </label>
+                      <label>Alternative .de-Domain (optional)
+                        <input name="alternativeDomain" maxlength="253" placeholder="dein-unternehmen-2.de" autocapitalize="none" spellcheck="false">
+                      </label>
+                    </div>
+                    <label>Domaininhaber *
+                      <select name="domainHolderDiffers" required>
+                        <option value="false">Der Domaininhaber entspricht dem Auftraggeber.</option>
+                        <option value="true">Der Domaininhaber ist abweichend.</option>
+                      </select>
+                    </label>
+                    <div id="business-domain-holder-fields" hidden>
+                      <label>Art des abweichenden Domaininhabers *
+                        <select name="domainHolderType">
+                          <option value="person">Person</option>
+                          <option value="organization">Organisation</option>
+                        </select>
+                      </label>
+                      <label id="business-holder-organization-field" hidden>Name der Organisation *
+                        <input name="domainHolderOrganizationName" maxlength="200" autocomplete="off">
+                      </label>
+                      <div id="business-holder-person-fields" class="row">
+                        <label>Vorname des Domaininhabers *
+                          <input name="domainHolderFirstName" maxlength="100" autocomplete="off">
+                        </label>
+                        <label>Nachname des Domaininhabers *
+                          <input name="domainHolderLastName" maxlength="100" autocomplete="off">
+                        </label>
+                      </div>
+                      <label>Straße und Hausnummer des Domaininhabers *
+                        <input name="domainHolderStreet" maxlength="200" autocomplete="off">
+                      </label>
+                      <div class="row">
+                        <label>Postleitzahl des Domaininhabers *
+                          <input name="domainHolderPostalCode" maxlength="20" autocomplete="off">
+                        </label>
+                        <label>Ort des Domaininhabers *
+                          <input name="domainHolderCity" maxlength="100" autocomplete="off">
+                        </label>
+                      </div>
+                      <div class="row">
+                        <label>Land (Ländercode) *
+                          <input name="domainHolderCountryCode" maxlength="2" placeholder="DE" autocomplete="off">
+                        </label>
+                        <label>E-Mail-Adresse des Domaininhabers *
+                          <input name="domainHolderEmail" type="email" maxlength="254" autocomplete="off">
+                        </label>
+                      </div>
+                    </div>
+                    <section class="business-hostinger-consent" aria-labelledby="business-hostinger-title">
+                      <h4 id="business-hostinger-title">Zustimmung zu Hosting und Domain</h4>
+                      <p id="business-hostinger-copy"></p>
+                      <label class="business-consent-check">
+                        <input name="hostingerConsent" type="checkbox" required>
+                        <span>Ich stimme den oben beschriebenen Hostinger-Bedingungen zu. *</span>
+                      </label>
+                    </section>
+                  </fieldset>
+                </form>
                 <button class="btn primary big" id="business-checkout" type="button">Weiter zum sicheren Checkout <span aria-hidden="true">→</span></button>
                 <p class="checkout-status" id="business-checkout-status" role="status" aria-live="polite"></p>
               </section>
@@ -605,9 +715,12 @@ export function renderBusinessBuilder(app) {
   const useServerButton = $('#use-server-draft')
   const discardInvalidLocalButton = $('#discard-invalid-local')
   const packageBox = $('#business-packages')
+  const fulfillmentForm = $('#business-fulfillment')
+  const fulfillmentFields = $('#business-fulfillment-fields')
   const checkoutButton = $('#business-checkout')
   const checkoutStatus = $('#business-checkout-status')
   const packages = getPackagesForBuilder('business')
+  $('#business-hostinger-copy').textContent = HOSTINGER_CONSENT_TEXT
   let localDataExists = localState.exists
   let localDataInvalid = localState.invalid
   let preserveLocalRaw = localState.invalid
@@ -645,6 +758,7 @@ export function renderBusinessBuilder(app) {
     $$('.step-wrap input, .step-wrap textarea, .step-wrap select, .step-wrap button, #gallery-drop').forEach((element) => {
       element.disabled = disabled
     })
+    updateFulfillmentVisibility()
     saveButton.disabled = disabled || referenceError || !draftReconciled || serverStatus === 'locked'
   }
 
@@ -685,6 +799,10 @@ export function renderBusinessBuilder(app) {
   function updateSaveControls() {
     saveButton.disabled = Boolean(savePromise) || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
     checkoutButton.disabled = checkoutPending || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
+    packageBox.querySelectorAll('input').forEach((input) => {
+      input.disabled = checkoutPending || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
+    })
+    updateFulfillmentVisibility()
     retryButton.hidden = !referenceError
     restartButton.hidden = !referenceError && serverStatus !== 'locked'
     if (!draft) saveButton.textContent = 'Serverentwurf speichern'
@@ -694,6 +812,91 @@ export function renderBusinessBuilder(app) {
   function setCheckoutStatus(message, kind = '') {
     checkoutStatus.textContent = message
     checkoutStatus.dataset.state = kind
+  }
+
+  function selectedPackageCode() {
+    return packageBox.querySelector('input[name="business-package"]:checked')?.value
+  }
+
+  function updateFulfillmentVisibility() {
+    const visible = selectedPackageCode() === BUSINESS_FULFILLMENT_PACKAGE_CODE
+    fulfillmentForm.hidden = !visible
+    fulfillmentFields.disabled = !visible || checkoutPending || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
+  }
+
+  function clearFulfillmentErrors() {
+    fulfillmentForm.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute('aria-invalid'))
+    if (checkoutStatus.dataset.state === 'error') setCheckoutStatus('')
+  }
+
+  function showFulfillmentError(error, { focus = true } = {}) {
+    clearFulfillmentErrors()
+    setCheckoutStatus(error.message, 'error')
+    const field = fulfillmentForm.elements[error.field]
+    if (!field) return
+    field.setAttribute('aria-invalid', 'true')
+    if (focus) field.focus()
+  }
+
+  function updateCustomerTypeFields({ clear = true } = {}) {
+    const isCompany = fulfillmentForm.elements.customerType.value === 'company'
+    const companyField = $('#business-company-name-field')
+    const companyName = fulfillmentForm.elements.companyName
+    companyField.hidden = !isCompany
+    companyName.required = isCompany
+    if (!isCompany && clear) companyName.value = ''
+  }
+
+  function updateDomainHolderFields({ clear = true } = {}) {
+    const differs = fulfillmentForm.elements.domainHolderDiffers.value === 'true'
+    const holderFields = $('#business-domain-holder-fields')
+    const isOrganization = fulfillmentForm.elements.domainHolderType.value === 'organization'
+    holderFields.hidden = !differs
+
+    const organizationField = $('#business-holder-organization-field')
+    const organizationName = fulfillmentForm.elements.domainHolderOrganizationName
+    const personFields = $('#business-holder-person-fields')
+    organizationField.hidden = !differs || !isOrganization
+    personFields.hidden = !differs || isOrganization
+    organizationName.required = differs && isOrganization
+    for (const name of ['domainHolderFirstName', 'domainHolderLastName']) {
+      fulfillmentForm.elements[name].required = differs && !isOrganization
+    }
+    for (const name of [
+      'domainHolderStreet',
+      'domainHolderPostalCode',
+      'domainHolderCity',
+      'domainHolderCountryCode',
+      'domainHolderEmail',
+    ]) {
+      fulfillmentForm.elements[name].required = differs
+    }
+
+    if (clear && (!differs || isOrganization)) {
+      fulfillmentForm.elements.domainHolderFirstName.value = ''
+      fulfillmentForm.elements.domainHolderLastName.value = ''
+    }
+    if (clear && (!differs || !isOrganization)) organizationName.value = ''
+    if (clear && !differs) {
+      for (const name of [
+        'domainHolderStreet',
+        'domainHolderPostalCode',
+        'domainHolderCity',
+        'domainHolderCountryCode',
+        'domainHolderEmail',
+      ]) fulfillmentForm.elements[name].value = ''
+    }
+  }
+
+  function resetFulfillmentForm() {
+    resetBusinessFulfillment(fulfillmentForm)
+    updateCustomerTypeFields({ clear: false })
+    updateDomainHolderFields({ clear: false })
+    packageBox.querySelectorAll('input').forEach((input, index) => {
+      input.checked = index === 0
+    })
+    clearFulfillmentErrors()
+    updateFulfillmentVisibility()
   }
 
   function trackImageTask(task) {
@@ -713,6 +916,10 @@ export function renderBusinessBuilder(app) {
   }
 
   function showPurchaseError({ path, message }) {
+    if (path && fulfillmentForm.elements[path]) {
+      showFulfillmentError({ field: path, message })
+      return
+    }
     const field = $(`[data-bind="${path}"]`)
     const step = field.closest('.step')
     const stepIndex = stepElements.indexOf(step)
@@ -746,6 +953,9 @@ export function renderBusinessBuilder(app) {
       <strong class="package-option-price">${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(item.amountCents / 100)}</strong>
     </label>
   `).join('')
+  updateCustomerTypeFields({ clear: false })
+  updateDomainHolderFields({ clear: false })
+  updateFulfillmentVisibility()
 
   function persistDraftReference(reference) {
     try {
@@ -979,6 +1189,13 @@ export function renderBusinessBuilder(app) {
       serverDraftData = loaded.data === null ? null : loaded.data
       draftReconciled = false
       referenceError = false
+      if (loaded.fulfillmentData) {
+        restoreBusinessFulfillment(fulfillmentForm, loaded.fulfillmentData)
+        packageBox.querySelector(`input[value="${BUSINESS_FULFILLMENT_PACKAGE_CODE}"]`).checked = true
+        updateCustomerTypeFields({ clear: false })
+        updateDomainHolderFields({ clear: false })
+        updateFulfillmentVisibility()
+      }
 
       if (localDataInvalid) {
         showConflict(
@@ -1037,6 +1254,7 @@ export function renderBusinessBuilder(app) {
     draftReconciled = true
     revision += 1
     savedRevision = -1
+    resetFulfillmentForm()
     hideConflict()
     setEditorDisabled(false)
     renderState()
@@ -1046,7 +1264,7 @@ export function renderBusinessBuilder(app) {
   }
 
   function restartServerDraft() {
-    if (!window.confirm('Die gespeicherte Serverreferenz wird aus diesem Browser entfernt. Der bisherige Serverentwurf bleibt bestehen, wird aber nicht gelöscht. Lokale Formulardaten bleiben erhalten. Fortfahren?')) return
+    if (!window.confirm('Die gespeicherte Serverreferenz wird aus diesem Browser entfernt. Der bisherige Serverentwurf bleibt bestehen, wird aber nicht gelöscht. Lokale Website-Formulardaten bleiben erhalten; die Rundum-Sorglos-Auftragsangaben werden zurückgesetzt. Fortfahren?')) return
     try {
       localStorage.removeItem(DRAFT_REFERENCE_KEY)
     } catch {
@@ -1061,6 +1279,7 @@ export function renderBusinessBuilder(app) {
     draftReconciled = !localDataInvalid
     revision += 1
     savedRevision = -1
+    resetFulfillmentForm()
     hideConflict()
     setEditorDisabled(localDataInvalid)
     setSaveStatus('Nicht gespeichert', 'pending')
@@ -1498,10 +1717,26 @@ export function renderBusinessBuilder(app) {
     clearTimeout(autoSaveTimer)
     saveLatest().catch(() => {})
   })
+  packageBox.addEventListener('change', updateFulfillmentVisibility)
+  fulfillmentForm.elements.customerType.addEventListener('change', () => {
+    updateCustomerTypeFields()
+    clearFulfillmentErrors()
+  })
+  fulfillmentForm.elements.domainHolderDiffers.addEventListener('change', () => {
+    updateDomainHolderFields()
+    clearFulfillmentErrors()
+  })
+  fulfillmentForm.elements.domainHolderType.addEventListener('change', () => {
+    updateDomainHolderFields()
+    clearFulfillmentErrors()
+  })
+  fulfillmentForm.addEventListener('input', clearFulfillmentErrors)
+  fulfillmentForm.addEventListener('change', clearFulfillmentErrors)
+
   checkoutButton.addEventListener('click', async () => {
     if (checkoutPending) return
 
-    const selectedPackage = packageBox.querySelector('input[name="business-package"]:checked')?.value
+    const selectedPackage = selectedPackageCode()
     if (!packages.some((item) => item.code === selectedPackage)) {
       setCheckoutStatus('Bitte wähle ein verfügbares Website-Paket aus.', 'error')
       return
@@ -1511,6 +1746,16 @@ export function renderBusinessBuilder(app) {
     if (purchaseError) {
       showPurchaseError(purchaseError)
       return
+    }
+
+    let orderData = null
+    if (selectedPackage === BUSINESS_FULFILLMENT_PACKAGE_CODE) {
+      try {
+        orderData = collectBusinessFulfillment(fulfillmentForm)
+      } catch (error) {
+        showFulfillmentError(error)
+        return
+      }
     }
 
     checkoutPending = true
@@ -1540,12 +1785,12 @@ export function renderBusinessBuilder(app) {
 
       const checkout = await requestJson('/api/checkout', {
         method: 'POST',
-        body: {
-          builder: 'business',
-          package: selectedPackage,
+        body: createBusinessCheckoutPayload({
+          packageCode: selectedPackage,
           draftId: reference.draftId,
           draftToken: reference.draftToken,
-        },
+          fulfillmentData: orderData,
+        }),
       })
 
       let checkoutUrl
@@ -1590,6 +1835,7 @@ export function renderBusinessBuilder(app) {
     if (!window.confirm('Alle Eingaben löschen?')) return
     Object.assign(state, cloneDefaults())
     bindFields()
+    resetFulfillmentForm()
     SINGLE_IMAGE_PATHS.forEach((path) => renderSingle($(`[data-img="${path}"]`)))
     renderGallery()
     renderList('services')

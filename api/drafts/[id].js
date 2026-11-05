@@ -39,7 +39,7 @@ export function createDraftHandler({
 
       if (req.method === 'GET') {
         const loaded = await loadDraft({ sql, get: storage.getObject, draftId, draftToken })
-        if (loaded.builder === 'artist-band' && loaded.status === 'draft') {
+        if ((loaded.builder === 'artist-band' || loaded.builder === 'business') && loaded.status === 'draft') {
           const fulfillment = await loadOrderFulfillment({ sql, draftId, draftToken })
           if (fulfillment.data) loaded.fulfillmentData = fulfillment.data
         }

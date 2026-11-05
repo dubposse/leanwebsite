@@ -4,7 +4,7 @@ import { HttpError } from './http.js'
 import { getPackage } from './packages.js'
 import { getSql } from './db.js'
 import { assertValidKey, getObject, orderSnapshotKey } from './storage.js'
-import { FULFILLMENT_PACKAGE_CODE } from './fulfillment.js'
+import { BUSINESS_FULFILLMENT_PACKAGE_CODE, FULFILLMENT_PACKAGE_CODE } from './fulfillment.js'
 import { createOrderConfirmationPdf } from './order-confirmation-pdf.js'
 
 // The paid order of a draft is found via orders.draft_id after the draft credentials were verified.
@@ -19,7 +19,8 @@ const SELECT_PAID_FULFILLMENT_SQL = `SELECT first_name, last_name, billing_stree
     billing_city, billing_country_code, communication_email, desired_domain, alternative_domain,
     domain_holder_differs, domain_holder_first_name, domain_holder_last_name, domain_holder_street,
     domain_holder_postal_code, domain_holder_city, domain_holder_country_code, domain_holder_email,
-    hostinger_consent_version, hostinger_consented_at
+    hostinger_consent_version, hostinger_consented_at, customer_type, company_name,
+    domain_holder_type, domain_holder_organization_name
   FROM order_fulfillment WHERE order_id = $1`
 
 export const DOWNLOAD_FILE_NAME = 'website.html'
@@ -121,7 +122,7 @@ export async function loadPaidOrderConfirmation({ sql = getSql(), storage = { ge
 
   if (!order) throw new DownloadError(404, 'Order not found', 'order_not_found')
   if (order.status !== 'paid') throw new DownloadError(402, 'Payment is not confirmed', 'not_paid')
-  if (order.package_code !== FULFILLMENT_PACKAGE_CODE) {
+  if (![FULFILLMENT_PACKAGE_CODE, BUSINESS_FULFILLMENT_PACKAGE_CODE].includes(order.package_code)) {
     throw new DownloadError(404, 'Order not found', 'order_not_found')
   }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { describe, it } from 'node:test'
-import { resolveOrderCompleteContext } from '../src/order-complete.js'
+import { resolveOrderCompleteContext, supportsOrderConfirmation } from '../src/order-complete.js'
 
 describe('order completion builder context', () => {
   it('uses the Artist & Band local reference for legacy URLs without a builder parameter', () => {
@@ -42,5 +42,13 @@ describe('order completion builder context', () => {
     assert.match(source, /Auftragsbestätigung als PDF herunterladen/)
     assert.match(source, /kontakt@matthiasbrehm\.de/)
     assert.doesNotMatch(source, /mailto:|sendgrid|nodemailer|sendEmail/i)
+  })
+
+  it('offers PDF confirmation only for the two Rundum-Sorglos packages', () => {
+    assert.equal(supportsOrderConfirmation('artist-band-rundum-sorglos'), true)
+    assert.equal(supportsOrderConfirmation('business-rundum-sorglos'), true)
+    assert.equal(supportsOrderConfirmation('artist-band-code-and-go'), false)
+    assert.equal(supportsOrderConfirmation('business-pure-code'), false)
+    assert.equal(supportsOrderConfirmation(undefined), false)
   })
 })

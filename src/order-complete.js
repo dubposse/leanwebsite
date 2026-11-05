@@ -1,6 +1,9 @@
 const POLL_INTERVAL_MS = 4000
 const MAX_POLLS = 45
-const RUNDUM_PACKAGE_CODE = 'artist-band-rundum-sorglos'
+const CONFIRMATION_PACKAGE_CODES = new Set([
+  'artist-band-rundum-sorglos',
+  'business-rundum-sorglos',
+])
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TOKEN = /^[A-Za-z0-9_-]{43}$/
@@ -27,6 +30,10 @@ export function resolveOrderCompleteContext(search) {
     context,
     returnedCancelled: params.get('checkout') === 'cancelled',
   }
+}
+
+export function supportsOrderConfirmation(packageCode) {
+  return CONFIRMATION_PACKAGE_CODES.has(packageCode)
 }
 
 function readCredentials(storageKey) {
@@ -139,7 +146,7 @@ export function renderOrderComplete(app) {
       notice.hidden = false
     }
 
-    if (order.status === 'paid' && order.package?.code === RUNDUM_PACKAGE_CODE) {
+    if (order.status === 'paid' && supportsOrderConfirmation(order.package?.code)) {
       show('Deine Zahlung wurde bestätigt!', 'success')
       confirmationPanel.hidden = false
       downloadButton.hidden = !order.downloadAvailable

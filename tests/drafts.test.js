@@ -4,7 +4,7 @@ import { createCheckoutHandler } from '../api/checkout.js'
 import { createDraftsHandler } from '../api/drafts/index.js'
 import { createDraftHandler, MAX_BODY_BYTES } from '../api/drafts/[id].js'
 import { defaultGenerators, validateImageDataUrl } from '../api/_lib/generators.js'
-import { hashToken } from '../api/_lib/tokens.js'
+import { generateAccessToken, hashToken } from '../api/_lib/tokens.js'
 import {
   buildRequest,
   buildResponse,
@@ -142,6 +142,60 @@ describe('draft API', () => {
       assert.equal(loaded.statusCode, 200)
       assert.equal(loaded.body.fulfillmentData.firstName, 'Ada')
       assert.equal(loaded.body.fulfillmentData.communicationEmail, 'ada@example.de')
+      assert.equal(loaded.body.fulfillmentData.hostingerConsent, true)
+      assert.equal('hostinger_consent_version' in loaded.body.fulfillmentData, false)
+      assert.equal('fulfillment_status' in loaded.body.fulfillmentData, false)
+    })
+
+    it('restores Business fulfillment only to its authorized draft owner', async () => {
+      const { draftId, draftToken } = await createDraftOk('business')
+      const orderId = '77777777-7777-4777-8777-777777777777'
+      db.orders.push({
+        id: orderId,
+        draft_id: draftId,
+        package_code: 'business-rundum-sorglos',
+        status: 'pending',
+        stripe_checkout_session_id: 'cs_test_business',
+        created_at: new Date('2026-01-01T00:00:00Z'),
+      })
+      db.fulfillments.set(orderId, {
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        billing_street: '1 Musterstraße',
+        billing_postal_code: '10115',
+        billing_city: 'Berlin',
+        billing_country_code: 'DE',
+        communication_email: 'ada@example.de',
+        desired_domain: 'ada-example.de',
+        alternative_domain: null,
+        domain_holder_differs: true,
+        domain_holder_first_name: null,
+        domain_holder_last_name: null,
+        domain_holder_street: '2 Vereinsweg',
+        domain_holder_postal_code: '20095',
+        domain_holder_city: 'Hamburg',
+        domain_holder_country_code: 'DE',
+        domain_holder_email: 'info@example.org',
+        customer_type: 'company',
+        company_name: 'Beispiel GmbH',
+        domain_holder_type: 'organization',
+        domain_holder_organization_name: 'Beispiel e.V.',
+        hostinger_consent_version: 'hostinger-setup-v1',
+        hostinger_consented_at: new Date('2026-01-01T00:00:00Z'),
+        fulfillment_status: 'pending',
+      })
+
+      const unauthorized = await get(draftId, generateAccessToken().token)
+      assert.equal(unauthorized.statusCode, 404)
+      assert.equal(JSON.stringify(unauthorized.body).includes('Beispiel GmbH'), false)
+
+      const loaded = await get(draftId, draftToken)
+      assert.equal(loaded.statusCode, 200)
+      assert.equal(loaded.body.fulfillmentData.customerType, 'company')
+      assert.equal(loaded.body.fulfillmentData.companyName, 'Beispiel GmbH')
+      assert.equal(loaded.body.fulfillmentData.domainHolderType, 'organization')
+      assert.equal(loaded.body.fulfillmentData.domainHolderOrganizationName, 'Beispiel e.V.')
+      assert.equal(loaded.body.fulfillmentData.domainHolderFirstName, null)
       assert.equal(loaded.body.fulfillmentData.hostingerConsent, true)
       assert.equal('hostinger_consent_version' in loaded.body.fulfillmentData, false)
       assert.equal('fulfillment_status' in loaded.body.fulfillmentData, false)
