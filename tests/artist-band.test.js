@@ -29,6 +29,8 @@ function artistData(overrides = {}) {
     bio: 'Produzent und DJ aus der Posse.',
     accent: '#c6ff00',
     theme: 'dark',
+    contentFont: 'standard',
+    contentColor: 'auto',
     spotify: '',
     soundcloud: '',
     bandcamp: '',
@@ -39,6 +41,10 @@ function artistData(overrides = {}) {
     gigs: [{ a: '2026-11-21', b: 'Berlin · Club Posse' }],
     ...overrides,
   }
+}
+
+function artistCss(html) {
+  return html.match(/<style>\n([\s\S]*?)\n<\/style>/)?.[1] ?? ''
 }
 
 const validate = (data) => validateBuilderData(defaultGenerators, 'artist-band', data).data
@@ -65,6 +71,48 @@ describe('builder generators', () => {
     assert.ok(defaultGenerators['artist-band'])
     assert.deepEqual(validate(artistData()), artistData())
     assert.deepEqual(validate(artistData({ spotify: 'https://open.spotify.com/artist/example' })).spotify, 'https://open.spotify.com/artist/example')
+  })
+
+  it('defaults legacy drafts to standard typography and automatic text color', () => {
+    const legacy = artistData()
+    delete legacy.contentFont
+    delete legacy.contentColor
+
+    assert.deepEqual(validate(legacy), artistData())
+    const html = generateArtistBandHtml(legacy, 2042)
+    const css = artistCss(html)
+    assert.match(html, /<body data-content-font="standard" data-content-color="auto">/)
+    assert.match(css, /body:not\(\[data-content-color="accent"\]\):not\(\[data-content-color="claim"\]\)\{--content-fg:var\(--fg\)\}/)
+    assert.match(css, /\.content-section\{color:var\(--content-fg\);/)
+    assert.match(css, /section\{width:min\(var\(--content-width\),calc\(100% - var\(--page-gutter\) - var\(--page-gutter\)\)\);margin-inline:var\(--page-gutter\);/)
+    assert.match(css, /\.hero\{[^}]*padding:8vw var\(--page-gutter\) 6vw/)
+    assert.equal((css.match(/{/g) ?? []).length, (css.match(/}/g) ?? []).length)
+  })
+
+  it('applies each selected content typography and color in generated HTML and CSS', () => {
+    const genreAccent = validate(artistData({ contentFont: 'genre', contentColor: 'accent' }))
+    const genreHtml = generateArtistBandHtml(genreAccent, 2042)
+    const genreCss = artistCss(genreHtml)
+    assert.equal(genreAccent.accent, '#c6ff00')
+    assert.match(genreHtml, /<body data-content-font="genre" data-content-color="accent">/)
+    assert.match(genreCss, /body\[data-content-color="accent"\]\{--content-fg:var\(--acc\)\}/)
+    assert.match(genreCss, /body\[data-content-font="genre"\] \.content-section\{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:\.95rem;letter-spacing:\.025em;line-height:1\.7\}/)
+    assert.match(genreCss, /body\[data-content-font="genre"\] \.content-section h2\{font-size:\.8rem;letter-spacing:\.3em\}/)
+    assert.match(genreHtml, /<section class="content-section"><h2>Über<\/h2>/)
+    assert.equal((genreCss.match(/{/g) ?? []).length, (genreCss.match(/}/g) ?? []).length)
+
+    const claimColor = validate(artistData({ contentFont: 'claim', contentColor: 'claim' }))
+    const claimHtml = generateArtistBandHtml(claimColor, 2042)
+    const claimCss = artistCss(claimHtml)
+    assert.match(claimHtml, /<body data-content-font="claim" data-content-color="claim">/)
+    assert.match(claimCss, /body\[data-content-color="claim"\]\{--content-fg:var\(--mut\)\}/)
+    assert.match(claimCss, /body\[data-content-font="claim"\] \.content-section\{font-family:Georgia,"Times New Roman",serif;font-size:1\.15rem;letter-spacing:\.01em;line-height:1\.75\}/)
+    assert.match(claimCss, /body\[data-content-font="claim"\] \.content-section h2\{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:1rem;letter-spacing:\.18em\}/)
+    assert.equal((claimCss.match(/{/g) ?? []).length, (claimCss.match(/}/g) ?? []).length)
+    assert.equal(
+      generateArtistBandHtml(claimColor, 2042),
+      renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(claimColor)), 2042).toString(),
+    )
   })
 
   describe('business generator', () => {
@@ -167,6 +215,8 @@ describe('builder generators', () => {
       artistData({ name: 7 }),
       artistData({ tagline: 'x'.repeat(181) }),
       artistData({ theme: 'custom' }),
+      artistData({ contentFont: 'serif' }),
+      artistData({ contentColor: '#ffffff' }),
       artistData({ accent: '#fff; background:url(javascript:alert(1))' }),
       artistData({ spotify: 'javascript:alert(1)' }),
       artistData({ bandcamp: 'https://user:pass@example.com/' }),
@@ -252,11 +302,17 @@ describe('builder generators', () => {
     const storage = createFakeStorage()
     const stripe = createFakeStripe()
     const { draftId, draftToken } = await createDraft({ sql, builderSlug: 'artist-band' })
-    const data = artistData({ cover: `data:image/jpeg;base64,${JPEG_BASE64}` })
+    const data = artistData({
+      cover: `data:image/jpeg;base64,${JPEG_BASE64}`,
+      contentFont: 'claim',
+      contentColor: 'accent',
+    })
 
     await saveDraft({ sql, put: storage.putObject, generators: defaultGenerators, draftId, draftToken, builderSlug: 'artist-band', data })
     const loaded = await loadDraft({ sql, get: storage.getObject, draftId, draftToken })
     assert.deepEqual(loaded.data, validate(data))
+    assert.equal(loaded.data.contentFont, 'claim')
+    assert.equal(loaded.data.contentColor, 'accent')
 
     const { url } = await createCheckoutSession({
       sql,
@@ -272,6 +328,7 @@ describe('builder generators', () => {
     assert.match(url, /^https:\/\/checkout\.stripe\.com\//)
     assert.equal(order.snapshot_content_type, 'text/html')
     assert.match(snapshot.body.toString(), /© 2042 DJ Nova · erstellt mit LeanWebsite/)
+    assert.match(snapshot.body.toString(), /data-content-font="claim" data-content-color="accent"/)
     assert.equal(stripe.createCalls, 1)
 
     const snapshotBefore = Buffer.from(snapshot.body)

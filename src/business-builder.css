@@ -219,6 +219,10 @@
   height: calc(100% - 60px);
 }
 
+#app.business-builder .mobile-view-switch {
+  display: none;
+}
+
 #app.business-builder .panel {
   display: flex;
   min-height: 0;
@@ -859,6 +863,167 @@
   #app.business-builder .topbar-actions .btn {
     padding: 7px 9px;
     font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 480px) {
+  #app.business-builder .business-page {
+    --switch-top: max(8px, env(safe-area-inset-top, 0px));
+    --switch-clearance: calc(var(--switch-top) + 62px);
+  }
+
+  #app.business-builder .topbar {
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  #app.business-builder .topbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  #app.business-builder .draft-status {
+    max-width: none;
+    flex: 1 1 100%;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  #app.business-builder .topbar-actions .btn:not([hidden]) {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    white-space: normal;
+  }
+
+  #app.business-builder .topbar-actions #btn-reset {
+    display: inline-flex;
+  }
+
+  #app.business-builder .mobile-view-switch {
+    position: sticky;
+    z-index: 5;
+    top: var(--switch-top);
+    display: flex;
+    gap: 4px;
+    margin: 12px 12px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    background: #15151f;
+  }
+
+  #app.business-builder .mobile-view-switch button {
+    min-width: 0;
+    min-height: 40px;
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  #app.business-builder .mobile-view-switch button[aria-pressed='true'] {
+    border-color: var(--a);
+    background: var(--a);
+    color: #fff;
+  }
+
+  #app.business-builder .layout {
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0 12px;
+    scroll-margin-top: var(--switch-clearance);
+  }
+
+  #app.business-builder .layout[data-view='edit'] .preview,
+  #app.business-builder .layout[data-view='preview'] .panel {
+    display: none;
+  }
+
+  #app.business-builder .panel {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  #app.business-builder .step-wrap {
+    overflow: visible;
+    padding: 8px 4px 20px;
+  }
+
+  #app.business-builder .steps {
+    padding: 12px 4px;
+  }
+
+  #app.business-builder .step-nav {
+    padding: 14px 4px;
+  }
+
+  #app.business-builder .step input:not([type='radio']):not([type='checkbox']):not([type='file']),
+  #app.business-builder .step textarea,
+  #app.business-builder .step select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  #app.business-builder .row,
+  #app.business-builder .item .row,
+  #app.business-builder .item .fact-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  #app.business-builder .item {
+    padding-top: 48px;
+  }
+
+  #app.business-builder .item .del,
+  #app.business-builder .gallery-grid button,
+  #app.business-builder .drop .rm {
+    width: 40px;
+    height: 40px;
+  }
+
+  #app.business-builder .package-option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  #app.business-builder .package-option-copy,
+  #app.business-builder .business-fulfillment,
+  #app.business-builder .draft-conflict,
+  #app.business-builder .validation-warning {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  #app.business-builder .package-option-price {
+    grid-column: 2;
+  }
+
+  #app.business-builder .preview {
+    height: calc(100vh - var(--switch-clearance));
+    height: calc(100dvh - var(--switch-clearance));
+    padding: 0;
+  }
+
+  #app.business-builder .preview-bar {
+    min-height: 32px;
+    margin-bottom: 8px;
+  }
+
+  #app.business-builder .preview-bar .seg {
+    display: none;
+  }
+
+  #app.business-builder .preview iframe {
+    width: 100% !important;
   }
 }
 

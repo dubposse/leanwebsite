@@ -20,6 +20,10 @@ function safeUrl(value) {
   return /^https?:\/\//i.test(value || '') ? escapeHtml(value) : ''
 }
 
+function validEmail(value) {
+  return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(value)
+}
+
 function css(data) {
   const accent = safeColor(data.design.accent, '#8b5cf6')
   const accent2 = safeColor(data.design.accent2, '#22d3ee')
@@ -45,7 +49,8 @@ h2{font-size:clamp(2rem,4.5vw,3.2rem);margin-bottom:.5em}
 .logo img{height:34px;width:auto}
 .nav ul{display:flex;gap:26px;list-style:none;margin:0;padding:0;font-size:.95rem}
 .nav ul a{text-decoration:none;color:var(--muted);transition:color .2s}.nav ul a:hover{color:var(--text)}
-.btn{display:inline-block;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:999px;background:linear-gradient(135deg,var(--a),var(--b));color:#07070d;box-shadow:0 10px 36px -10px var(--a);transition:transform .25s,box-shadow .25s}
+.menu-toggle{display:none}
+.btn{display:inline-block;text-decoration:none;font:inherit;font-weight:700;padding:14px 28px;border:0;border-radius:999px;background:linear-gradient(135deg,var(--a),var(--b));color:#07070d;box-shadow:0 10px 36px -10px var(--a);transition:transform .25s,box-shadow .25s;cursor:pointer}
 .btn:hover{transform:translateY(-3px) scale(1.02);box-shadow:0 18px 44px -10px var(--b)}
 .hero{min-height:100svh;display:flex;align-items:center;padding-top:110px;overflow:hidden}
 .hero-bg{position:absolute;inset:0;z-index:-1}
@@ -74,6 +79,10 @@ h2{font-size:clamp(2rem,4.5vw,3.2rem);margin-bottom:.5em}
 .contact-box{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
 .contact-box h3{font-size:1rem;color:var(--muted);font-weight:600;margin-bottom:8px;letter-spacing:0}
 .contact-box a{text-decoration:none;font-weight:600}
+.email-copy{padding:0;border:0;background:none;color:inherit;font:inherit;font-weight:600;text-align:left;overflow-wrap:anywhere;user-select:text;cursor:pointer}
+.email-copy:focus-visible,.big-cta .btn:focus-visible{outline:2px solid var(--a);outline-offset:3px}
+.copy-status{margin:8px 0 0;color:var(--muted);font-size:.9rem}
+.copy-status:empty{display:none}
 .big-cta{margin-top:40px;padding:clamp(28px,5vw,56px);border-radius:calc(var(--r) + 8px);background:linear-gradient(135deg,color-mix(in srgb,var(--a) 28%,transparent),color-mix(in srgb,var(--b) 22%,transparent));border:1px solid var(--line);text-align:center}
 footer{border-top:1px solid var(--line);padding:36px 0;color:var(--muted);font-size:.9rem}
 footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
@@ -83,18 +92,31 @@ footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
 .rv{opacity:0;transform:translateY(34px);transition:opacity .8s cubic-bezier(.2,.8,.2,1),transform .8s cubic-bezier(.2,.8,.2,1);transition-delay:var(--d,0s)}
 .rv.in{opacity:1;transform:none}
 .cursor{position:fixed;width:340px;height:340px;border-radius:50%;pointer-events:none;background:radial-gradient(circle,color-mix(in srgb,var(--a) 22%,transparent),transparent 65%);transform:translate(-50%,-50%);z-index:-1;left:50%;top:30%}
-@media(max-width:760px){.nav ul{display:none}.about{grid-template-columns:1fr}.about img{aspect-ratio:4/3}.cursor{display:none}}
+@media(max-width:760px){
+  .menu-toggle{display:flex;flex-shrink:0;flex-direction:column;justify-content:center;align-items:center;gap:5px;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);color:var(--text);cursor:pointer}
+  .menu-toggle span{width:20px;height:2px;background:currentColor;border-radius:2px;transition:transform .2s,opacity .2s}
+  .menu-toggle[aria-expanded="true"] span:first-child{transform:translateY(7px) rotate(45deg)}
+  .menu-toggle[aria-expanded="true"] span:nth-child(2){opacity:0}
+  .menu-toggle[aria-expanded="true"] span:last-child{transform:translateY(-7px) rotate(-45deg)}
+  .menu-toggle:focus-visible,.nav ul a:focus-visible{outline:2px solid var(--a);outline-offset:3px}
+  .nav ul{display:none;position:absolute;top:68px;left:4%;right:4%;max-height:calc(100vh - 80px);overflow-y:auto;flex-direction:column;gap:0;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 12px 32px rgba(0,0,0,.2)}
+  .nav .menu-toggle[aria-expanded="true"]+ul{display:flex}
+  .nav ul a{display:block;padding:12px 16px;border-radius:var(--r)}
+  .nav ul a:hover{background:var(--card)}
+  .about{grid-template-columns:1fr}.about img{aspect-ratio:4/3}.cursor{display:none}
+}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
 `
 }
 
-export function generateBusinessHtml(data) {
+export function generateBusinessHtml(data, { preview = false } = {}) {
   const name = data.company.name || 'Eure Firma'
   const services = data.services.filter((service) => service.title || service.text)
   const facts = data.facts.filter((fact) => fact.value || fact.label)
   const gallery = data.gallery
   const hasAbout = data.about.title || data.about.text || data.about.image || facts.length
   const contact = data.contact
+  const canCopyEmail = validEmail(contact.email)
   const hasContact = contact.email || contact.phone || contact.address || contact.hours
   const nav = [
     services.length && ['leistungen', 'Leistungen'],
@@ -103,12 +125,12 @@ export function generateBusinessHtml(data) {
     hasContact && ['kontakt', 'Kontakt'],
   ].filter(Boolean)
   const headline = data.hero.headline || name
-  const ctaHref = contact.email ? `mailto:${escapeHtml(contact.email)}` : '#kontakt'
 
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
+${preview ? '<base href="about:srcdoc">' : ''}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(name)}${data.company.tagline ? ' – ' + escapeHtml(data.company.tagline) : ''}</title>
 <meta name="description" content="${escapeHtml(data.hero.sub || data.company.tagline || name)}">
@@ -119,7 +141,8 @@ export function generateBusinessHtml(data) {
 <div class="cursor" id="glow" aria-hidden="true"></div>
 <header class="nav" id="nav"><div class="wrap">
   <a class="logo" href="#top">${data.logo ? `<img src="${data.logo}" alt="${escapeHtml(name)} Logo">` : escapeHtml(name)}</a>
-  <ul>${nav.map(([id, label]) => `<li><a href="#${id}">${label}</a></li>`).join('')}</ul>
+  ${nav.length ? `<button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="nav-links"><span></span><span></span><span></span></button>` : ''}
+  <ul id="nav-links">${nav.map(([id, label]) => `<li><a href="#${id}">${label}</a></li>`).join('')}</ul>
 </div></header>
 
 <section class="hero" id="top">
@@ -129,7 +152,7 @@ export function generateBusinessHtml(data) {
     ${data.hero.badge ? `<span class="badge rv">${escapeHtml(data.hero.badge)}</span>` : ''}
     <h1 class="rv" style="--d:.08s"><span class="grad">${escapeHtml(headline)}</span></h1>
     ${data.hero.sub ? `<p class="lead rv" style="--d:.16s">${nl2br(data.hero.sub)}</p>` : ''}
-    <a class="btn rv" style="--d:.24s" href="${hasContact ? '#kontakt' : ctaHref}">${escapeHtml(data.hero.cta || 'Kontakt aufnehmen')}</a>
+    <a class="btn rv" style="--d:.24s" href="#kontakt">${escapeHtml(data.hero.cta || 'Kontakt aufnehmen')}</a>
   </div>
 </section>
 
@@ -152,16 +175,17 @@ ${gallery.length ? `<section id="galerie"><div class="wrap">
   <div class="gal">${gallery.map((image) => `<img class="rv" src="${image}" alt="Bild von ${escapeHtml(name)}" loading="lazy">`).join('')}</div>
 </div></section>` : ''}
 
-${hasContact ? `<section id="kontakt"><div class="wrap">
+<section id="kontakt"><div class="wrap">
   <h2 class="rv">Kontakt</h2>
   <div class="contact-box">
-    ${contact.email ? `<div class="card rv"><h3>E-Mail</h3><a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a></div>` : ''}
+    ${contact.email ? `<div class="card rv"><h3>E-Mail</h3>${canCopyEmail ? `<button class="email-copy" type="button" data-copy-email aria-describedby="email-copy-status" title="E-Mail-Adresse kopieren"><span id="contact-email-value">${escapeHtml(contact.email)}</span></button><p class="copy-status" id="email-copy-status" role="status" aria-live="polite"></p>` : `<span>${escapeHtml(contact.email)}</span>`}</div>` : ''}
     ${contact.phone ? `<div class="card rv" style="--d:.08s"><h3>Telefon</h3><a href="tel:${escapeHtml(contact.phone.replace(/[^+\d]/g, ''))}">${escapeHtml(contact.phone)}</a></div>` : ''}
     ${contact.address ? `<div class="card rv" style="--d:.16s"><h3>Adresse</h3>${nl2br(contact.address)}</div>` : ''}
     ${contact.hours ? `<div class="card rv" style="--d:.24s"><h3>Öffnungszeiten</h3>${nl2br(contact.hours)}</div>` : ''}
   </div>
-  ${contact.email ? `<div class="big-cta rv"><h2>Lass uns starten.</h2><a class="btn" href="mailto:${escapeHtml(contact.email)}">${escapeHtml(data.hero.cta || 'Jetzt anfragen')}</a></div>` : ''}
-</div></section>` : ''}
+  ${!hasContact ? '<p class="rv">Noch keine Kontaktdaten hinterlegt.</p>' : ''}
+  ${canCopyEmail ? `<div class="big-cta rv"><h2>Kontakt aufnehmen</h2><button class="btn" type="button" data-copy-email aria-describedby="cta-copy-status">E-Mail-Adresse kopieren</button><p class="copy-status" id="cta-copy-status" role="status" aria-live="polite"></p></div>` : ''}
+</div></section>
 
 <footer><div class="wrap">
   <span>© <span id="y"></span> ${escapeHtml(name)}</span>
@@ -182,6 +206,42 @@ ${hasContact ? `<section id="kontakt"><div class="wrap">
   var $=function(s){return document.querySelector(s)};
   $('#y').textContent=new Date().getFullYear();
   var nav=$('#nav');
+  var menu=nav.querySelector('.menu-toggle'),links=$('#nav-links');
+  if(menu){
+    var closeMenu=function(){menu.setAttribute('aria-expanded','false');menu.setAttribute('aria-label','Menü öffnen')};
+    menu.addEventListener('click',function(){
+      var open=menu.getAttribute('aria-expanded')!=='true';
+      menu.setAttribute('aria-expanded',String(open));
+      menu.setAttribute('aria-label',open?'Menü schließen':'Menü öffnen');
+    });
+    links.addEventListener('click',function(e){if(e.target.closest('a'))closeMenu()});
+    addEventListener('keydown',function(e){if(e.key==='Escape'&&menu.getAttribute('aria-expanded')==='true'){closeMenu();menu.focus()}});
+    matchMedia('(max-width: 760px)').addEventListener('change',function(e){if(!e.matches)closeMenu()});
+  }
+  document.querySelectorAll('[data-copy-email]').forEach(function(button){
+    button.addEventListener('click',async function(){
+      var selection=window.getSelection();
+      if(selection&&!selection.isCollapsed&&button.contains(selection.anchorNode))return;
+      var email=$('#contact-email-value').textContent;
+      var status=document.getElementById(button.getAttribute('aria-describedby'));
+      var copied=false;
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        try{await navigator.clipboard.writeText(email);copied=true}catch(error){copied=false}
+      }
+      if(!copied){
+        var field=document.createElement('textarea');
+        field.value=email;
+        field.readOnly=true;
+        field.style.cssText='position:fixed;left:-9999px;top:0';
+        document.body.appendChild(field);
+        field.select();
+        try{copied=document.execCommand('copy')}catch(error){copied=false}
+        field.remove();
+        button.focus({preventScroll:true});
+      }
+      status.textContent=copied?'E-Mail kopiert!':'Kopieren nicht möglich. Bitte die E-Mail-Adresse oben markieren und manuell kopieren.';
+    });
+  });
   addEventListener('scroll',function(){nav.classList.toggle('stuck',scrollY>20)},{passive:true});
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
   document.querySelectorAll('.rv').forEach(function(el){io.observe(el)});

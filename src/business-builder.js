@@ -1,5 +1,6 @@
 import { generateBusinessHtml } from '../shared/business-template.js'
 import { getPackagesForBuilder } from '../shared/packages.js'
+import { setupBusinessMobileView } from './business-mobile-view.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
   collectBusinessFulfillment,
@@ -447,8 +448,12 @@ export function renderBusinessBuilder(app) {
         </div>
       </header>
 
-      <main class="layout">
-        <section class="panel" aria-label="Business-Website bearbeiten">
+      <div class="mobile-view-switch" role="group" aria-label="Ansicht wählen">
+        <button type="button" data-view="edit" aria-pressed="true" aria-controls="business-editor">Bearbeiten</button>
+        <button type="button" data-view="preview" aria-pressed="false" aria-controls="business-preview">Vorschau</button>
+      </div>
+      <main class="layout" data-view="edit">
+        <section id="business-editor" class="panel" aria-label="Business-Website bearbeiten">
           <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
           <nav class="steps" id="steps" aria-label="Schritte"></nav>
 
@@ -681,7 +686,7 @@ export function renderBusinessBuilder(app) {
           </div>
         </section>
 
-        <section class="preview" aria-label="Live-Vorschau deiner Website">
+        <section id="business-preview" class="preview" aria-label="Live-Vorschau deiner Website">
           <div class="preview-bar">
             <span>Live-Vorschau</span>
             <div class="seg" id="device" aria-label="Vorschaugröße">
@@ -740,6 +745,11 @@ export function renderBusinessBuilder(app) {
   const imageTasks = new Set()
   let storageWarningShown = false
   let preservedDataWarningShown = false
+
+  setupBusinessMobileView($('.layout'), $('.mobile-view-switch'), () => {
+    frame.getBoundingClientRect()
+    renderPreview()
+  })
 
   function toast(message) {
     const element = $('#toast')
@@ -1073,7 +1083,7 @@ export function renderBusinessBuilder(app) {
     renderList('services')
     renderList('facts')
     updateValidationWarnings()
-    frame.srcdoc = generateBusinessHtml(state)
+    renderPreview()
   }
 
   function useServerState() {
@@ -1293,11 +1303,14 @@ export function renderBusinessBuilder(app) {
     }
   }
 
+  function renderPreview() {
+    clearTimeout(previewTimer)
+    frame.srcdoc = generateBusinessHtml(state, { preview: true })
+  }
+
   function updatePreview() {
     clearTimeout(previewTimer)
-    previewTimer = setTimeout(() => {
-      frame.srcdoc = generateBusinessHtml(state)
-    }, 300)
+    previewTimer = setTimeout(renderPreview, 300)
   }
 
   function changed() {

@@ -1,5 +1,6 @@
 import { getPackagesForBuilder } from '../shared/packages.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
+import { setupArtistBandMobileView } from './artist-band-mobile-view.js'
 import {
   collectArtistBandFulfillment,
   createArtistBandCheckoutPayload,
@@ -18,6 +19,8 @@ const DEFAULT_DATA = {
   bio: 'Produzent und DJ aus der Posse. Treibende Grooves, analoge Wärme und viel Acid.',
   accent: '#c6ff00',
   theme: 'dark',
+  contentFont: 'standard',
+  contentColor: 'auto',
   spotify: '',
   soundcloud: '',
   bandcamp: '',
@@ -29,7 +32,7 @@ const DEFAULT_DATA = {
 }
 
 const FIELD_NAMES = [
-  'name', 'genre', 'tagline', 'bio', 'accent', 'theme',
+  'name', 'genre', 'tagline', 'bio', 'accent', 'theme', 'contentFont', 'contentColor',
   'spotify', 'soundcloud', 'bandcamp', 'instagram', 'email',
 ]
 
@@ -183,8 +186,12 @@ export function renderArtistBandBuilder(app) {
           <p>Gestalte eine Website, die deine Musik und deine nächsten Gigs in den Mittelpunkt stellt.</p>
         </section>
 
-        <div class="ab-workspace">
-          <section class="ab-editor" aria-label="Website-Inhalte bearbeiten">
+        <div class="ab-mobile-view-switch" role="group" aria-label="Ansicht wählen">
+          <button type="button" data-view="edit" aria-pressed="true" aria-controls="ab-editor">Bearbeiten</button>
+          <button type="button" data-view="preview" aria-pressed="false" aria-controls="ab-preview-panel">Vorschau</button>
+        </div>
+        <div class="ab-workspace" data-view="edit">
+          <section id="ab-editor" class="ab-editor" aria-label="Website-Inhalte bearbeiten">
             <form id="ab-form">
               <fieldset id="ab-fields">
                 <legend class="ab-sr-only">Inhalte deiner Artist- oder Band-Website</legend>
@@ -197,7 +204,10 @@ export function renderArtistBandBuilder(app) {
                     <label class="ab-field ab-field-wide">Dein Claim<input name="tagline" maxlength="180"></label>
                     <label class="ab-field ab-field-wide">Über dich / euch<textarea name="bio" maxlength="3000" rows="5"></textarea></label>
                     <label class="ab-field">Farbstil<select name="theme"><option value="dark">Dark</option><option value="light">Light</option><option value="grad">Gradient</option></select></label>
+                    <label class="ab-field">Schriftstil der Inhalte<select name="contentFont"><option value="standard">Standard</option><option value="genre">Genre-Stil</option><option value="claim">Claim-Stil</option></select></label>
+                    <label class="ab-field">Textfarbe der Inhalte<select name="contentColor"><option value="auto">Automatisch</option><option value="accent">Akzentfarbe</option><option value="claim">Claim-Farbe</option></select></label>
                     <label class="ab-field">Cover-Bild<span class="ab-file-control"><input id="ab-cover" type="file" accept="image/*"><span>Bild auswählen</span></span><span id="ab-cover-name" class="ab-field-hint">Wird als JPEG verarbeitet (max. 1,5 MB).</span></label>
+                    <p class="ab-field-hint ab-field-wide">Bei Akzentfarbe als Textfarbe kann die Lesbarkeit je nach gewählter Farbe variieren.</p>
                   </div>
                   <div id="ab-cover-preview-wrap" class="ab-cover-preview-wrap" hidden><img id="ab-cover-preview" alt="Vorschau des Cover-Bildes"><button id="ab-remove-cover" class="ab-text-button" type="button">Cover entfernen</button></div>
                 </section>
@@ -288,7 +298,7 @@ export function renderArtistBandBuilder(app) {
             <p class="ab-privacy-note">Die Vorschau wird in deinem Browser erzeugt. Beim Speichern werden die Inhalte deiner Website inklusive Cover für deinen privaten Entwurf gespeichert. Auftragsdaten werden bei einem Rundum-sorglos-Checkout separat und nur für die Bestellung serverseitig gespeichert. Entwurfs-Zugangsdaten bleiben lokal in diesem Browser gespeichert; gib diese nicht weiter.</p>
           </section>
 
-          <aside class="ab-preview-panel" aria-label="Live-Vorschau deiner Website">
+          <aside id="ab-preview-panel" class="ab-preview-panel" aria-label="Live-Vorschau deiner Website">
             <div class="ab-preview-heading"><div><span class="ab-live-dot"></span> Live-Vorschau</div><span>Änderungen erscheinen direkt</span></div>
             <iframe id="ab-preview" title="Live-Vorschau der Artist/Band-Website" sandbox=""></iframe>
           </aside>
@@ -301,6 +311,7 @@ export function renderArtistBandBuilder(app) {
   const form = app.querySelector('#ab-form')
   const fields = app.querySelector('#ab-fields')
   const preview = app.querySelector('#ab-preview')
+  setupArtistBandMobileView(app.querySelector('.ab-workspace'), app.querySelector('.ab-mobile-view-switch'))
   const status = app.querySelector('#ab-status')
   const saveButton = app.querySelector('#ab-save')
   const checkoutButton = app.querySelector('#ab-checkout')
@@ -455,7 +466,9 @@ export function renderArtistBandBuilder(app) {
   }
 
   function renderForm() {
-    for (const key of FIELD_NAMES) form.elements[key].value = data[key]
+    for (const key of FIELD_NAMES) {
+      form.elements[key].value = data[key] ?? DEFAULT_DATA[key]
+    }
     artistName.textContent = data.name
     renderList('tracks')
     renderList('gigs')
@@ -567,7 +580,11 @@ export function renderArtistBandBuilder(app) {
       const loaded = await requestJson(`/api/drafts/${encodeURIComponent(draft.draftId)}`, { token: draft.draftToken })
       if (loaded.builder !== 'artist-band') throw new Error('Der gespeicherte Entwurf gehört nicht zum Artist/Band-Builder.')
       if (loaded.data) {
-        data = cloneData(loaded.data)
+        data = cloneData({
+          ...loaded.data,
+          contentFont: loaded.data.contentFont ?? DEFAULT_DATA.contentFont,
+          contentColor: loaded.data.contentColor ?? DEFAULT_DATA.contentColor,
+        })
         revision = 0
         savedRevision = 0
         renderForm()
@@ -601,7 +618,14 @@ export function renderArtistBandBuilder(app) {
 
   form.addEventListener('input', (event) => {
     const key = event.target.name
-    if (!FIELD_NAMES.includes(key)) return
+    if (!FIELD_NAMES.includes(key) || event.target.tagName === 'SELECT') return
+    data[key] = event.target.value
+    markChanged()
+  })
+
+  form.addEventListener('change', (event) => {
+    const key = event.target.name
+    if (event.target.tagName !== 'SELECT' || !FIELD_NAMES.includes(key) || data[key] === event.target.value) return
     data[key] = event.target.value
     markChanged()
   })

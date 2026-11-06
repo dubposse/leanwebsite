@@ -21,6 +21,9 @@ const THEMES = Object.freeze({
   grad: ['#12002b', '#ffffff', '#c9b8ee', '#ffffff14'],
 })
 
+const CONTENT_FONTS = Object.freeze(['standard', 'genre', 'claim'])
+const CONTENT_COLORS = Object.freeze(['auto', 'accent', 'claim'])
+
 const JPEG_DATA_URL = /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/
 
 function invalid(BuilderValidationError, message = 'Invalid artist or band data') {
@@ -111,7 +114,7 @@ function validateRows(value, BuilderValidationError) {
 
 export function validateArtistBandData(input, BuilderValidationError) {
   const fields = [
-    'name', 'genre', 'tagline', 'bio', 'accent', 'theme', 'spotify', 'soundcloud',
+    'name', 'genre', 'tagline', 'bio', 'accent', 'theme', 'contentFont', 'contentColor', 'spotify', 'soundcloud',
     'bandcamp', 'instagram', 'email', 'cover', 'tracks', 'gigs',
   ]
   if (!isPlainObject(input) || Object.keys(input).some((key) => !fields.includes(key))) {
@@ -125,6 +128,12 @@ export function validateArtistBandData(input, BuilderValidationError) {
     bio: validateString(input, 'bio', BuilderValidationError),
     accent: validateString(input, 'accent', BuilderValidationError, { max: 7 }),
     theme: validateString(input, 'theme', BuilderValidationError, { max: 5 }),
+    contentFont: Object.hasOwn(input, 'contentFont')
+      ? validateString(input, 'contentFont', BuilderValidationError, { max: 8 })
+      : 'standard',
+    contentColor: Object.hasOwn(input, 'contentColor')
+      ? validateString(input, 'contentColor', BuilderValidationError, { max: 6 })
+      : 'auto',
     spotify: validateString(input, 'spotify', BuilderValidationError),
     soundcloud: validateString(input, 'soundcloud', BuilderValidationError),
     bandcamp: validateString(input, 'bandcamp', BuilderValidationError),
@@ -135,7 +144,12 @@ export function validateArtistBandData(input, BuilderValidationError) {
     gigs: input.gigs,
   }
 
-  if (!/^#[0-9a-f]{6}$/i.test(data.accent) || !Object.hasOwn(THEMES, data.theme)) {
+  if (
+    !/^#[0-9a-f]{6}$/i.test(data.accent)
+    || !Object.hasOwn(THEMES, data.theme)
+    || !CONTENT_FONTS.includes(data.contentFont)
+    || !CONTENT_COLORS.includes(data.contentColor)
+  ) {
     invalid(BuilderValidationError)
   }
 
