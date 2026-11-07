@@ -36,19 +36,20 @@ describe('order completion builder context', () => {
     assert.equal(result.context, null)
   })
 
-  it('presents the confirmation instructions without opening or sending email', async () => {
+  it('offers the contract PDF and preserves the manual Rundum-Sorglos email step', async () => {
     const source = await readFile(new URL('../src/order-complete.js', import.meta.url), 'utf8')
-    assert.match(source, /Deine Zahlung wurde bestätigt!/)
-    assert.match(source, /Auftragsbestätigung als PDF herunterladen/)
+    assert.match(source, /Deine Zahlung wurde bestätigt\. Vertragsbestätigung und Website stehen bereit\./)
+    assert.match(source, /Vertragsbestätigung als PDF herunterladen/)
+    assert.match(source, /oc-email-confirmation-flow/)
     assert.match(source, /kontakt@matthiasbrehm\.de/)
     assert.doesNotMatch(source, /mailto:|sendgrid|nodemailer|sendEmail/i)
   })
 
-  it('offers PDF confirmation only for the two Rundum-Sorglos packages', () => {
+  it('offers a PDF contract confirmation for all four packages', () => {
     assert.equal(supportsOrderConfirmation('artist-band-rundum-sorglos'), true)
     assert.equal(supportsOrderConfirmation('business-rundum-sorglos'), true)
-    assert.equal(supportsOrderConfirmation('artist-band-code-and-go'), false)
-    assert.equal(supportsOrderConfirmation('business-pure-code'), false)
+    assert.equal(supportsOrderConfirmation('artist-band-code-and-go'), true)
+    assert.equal(supportsOrderConfirmation('business-pure-code'), true)
     assert.equal(supportsOrderConfirmation(undefined), false)
   })
 })

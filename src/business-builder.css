@@ -33,6 +33,22 @@
   text-decoration: none;
 }
 
+#app.business-builder .business-privacy-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  padding: 12px 0 24px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+#app.business-builder .business-privacy-links a:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 #app.business-builder .bg-orbs i {
   position: fixed;
   z-index: 0;
@@ -382,7 +398,7 @@
 
 #app.business-builder .package-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin: 0 !important;
   border: 1px solid var(--border);
@@ -418,6 +434,129 @@
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 400;
+}
+
+#app.business-builder .package-option-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#app.business-builder .package-option-copy .package-option-tagline,
+#app.business-builder .package-option-copy .package-option-list-title {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+#app.business-builder .package-option-copy .package-option-description {
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+#app.business-builder .package-option-copy ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+#app.business-builder .package-option-copy .package-option-list-title {
+  margin-top: 4px;
+}
+
+#app.business-builder .package-changes-note {
+  margin: -4px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px;
+  background: var(--surface);
+}
+
+#app.business-builder .package-changes-note h4 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+#app.business-builder .package-changes-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+#app.business-builder .business-tax-note {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+#app.business-builder .business-checkout-review {
+  margin: 14px 0;
+  border: 1px solid color-mix(in srgb, var(--a) 50%, var(--border));
+  border-radius: 14px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--a) 7%, var(--surface));
+  color: var(--muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+#app.business-builder .business-checkout-review[hidden] {
+  display: none;
+}
+
+#app.business-builder .business-checkout-review h4 {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+#app.business-builder .business-checkout-review p {
+  margin: 6px 0;
+  white-space: pre-line;
+}
+
+#app.business-builder .business-checkout-review ul {
+  margin: 4px 0 10px;
+  padding-left: 20px;
+}
+
+#app.business-builder .business-checkout-review .checkout-review-hosting {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+#app.business-builder .business-checkout-review .checkout-review-hosting h4 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+#app.business-builder .business-checkout-review .checkout-review-total {
+  margin-top: 12px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+#app.business-builder .business-checkout-review-links,
+#app.business-builder .business-checkout-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+#app.business-builder .business-checkout-review-links a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 #app.business-builder .package-option-price {
@@ -482,6 +621,7 @@
   font-size: 0.78rem;
   font-weight: 400;
   white-space: pre-line;
+  line-height: 1.6;
 }
 
 #app.business-builder .business-fulfillment .business-consent-check {
@@ -867,6 +1007,11 @@
 }
 
 @media (max-width: 480px) {
+  #app.business-builder .business-privacy-links {
+    gap: 12px;
+    font-size: 0.72rem;
+  }
+
   #app.business-builder .business-page {
     --switch-top: max(8px, env(safe-area-inset-top, 0px));
     --switch-clearance: calc(var(--switch-top) + 62px);

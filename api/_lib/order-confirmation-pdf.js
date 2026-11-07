@@ -1,14 +1,15 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { BUSINESS_FULFILLMENT_PACKAGE_CODE, FULFILLMENT_PACKAGE_CODE } from './fulfillment.js'
+import { getPackage } from './packages.js'
+import { CHECKOUT_TAX_NOTICE, HOSTING_DOMAIN_DETAILS, PACKAGE_COPY } from '../../shared/builder-copy.js'
+import { WITHDRAWAL_NOTICE } from '../../shared/withdrawal-copy.js'
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
 const MARGIN = 42
-const COLUMN_GAP = 18
 const CONTENT_TOP = 106
 const CONTENT_BOTTOM = PAGE_HEIGHT - 50
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
-const COLUMN_WIDTH = (CONTENT_WIDTH - COLUMN_GAP) / 2
 const TEXT = rgb(0.13, 0.16, 0.19)
 const MUTED = rgb(0.38, 0.42, 0.46)
 const ACCENT = rgb(0.55, 0.78, 0.08)
@@ -74,6 +75,12 @@ function prepareSection(section, width, regular, bold) {
           lines: wrapText(entry.value, regular, 9.5, width - 12),
         }
       }
+      if (entry.type === 'paragraph') {
+        return {
+          type: 'paragraph',
+          lines: wrapText(entry.value, regular, 9.5, width),
+        }
+      }
 
       const labelLines = wrapText(entry.label, bold, 7.5, width)
       const valueLines = wrapText(entry.value, regular, 9.5, width)
@@ -84,32 +91,42 @@ function prepareSection(section, width, regular, bold) {
 
 function entryHeight(entry) {
   if (entry.type === 'bullet') return entry.lines.length * 12 + 4
+  if (entry.type === 'paragraph') return entry.lines.length * 12 + 5
   return entry.labelLines.length * 9.5 + entry.valueLines.length * 12 + 3
 }
 
-function sectionHeight(section) {
-  return 24 + section.entries.reduce((height, entry) => height + entryHeight(entry), 0)
-}
-
-export async function createOrderConfirmationPdf({ order, fulfillment, amountCents, artistName }) {
-  const isBusiness = order.package_code === BUSINESS_FULFILLMENT_PACKAGE_CODE
-  if (!isBusiness && order.package_code !== FULFILLMENT_PACKAGE_CODE) {
+export async function createOrderConfirmationPdf({
+  order,
+  fulfillment = null,
+  amountCents,
+  artistName,
+  stripeCustomer = null,
+  withdrawalUrl = '/widerruf',
+}) {
+  const pkg = getPackage(order.package_code)
+  const copy = PACKAGE_COPY[order.package_code]
+  if (!pkg || !copy) {
     throw new Error('Unsupported order confirmation package')
   }
+  const isBusiness = pkg.builderSlug === 'business'
+  const isManaged = [FULFILLMENT_PACKAGE_CODE, BUSINESS_FULFILLMENT_PACKAGE_CODE].includes(order.package_code)
+  if (isManaged && !fulfillment) throw new Error('Fulfillment details are required for Rundum Sorglos')
 
   const document = await PDFDocument.create()
   const regular = await document.embedFont(StandardFonts.Helvetica)
   const bold = await document.embedFont(StandardFonts.HelveticaBold)
-  document.setTitle('Auftragsbestätigung – Rundum Sorglos')
+  document.setTitle('Vertragsbestätigung – LeanWebsite Studio')
   document.setAuthor('LeanWebsite Studio')
-  document.setSubject(isBusiness
-    ? 'Auftragsbestätigung Business – Rundum Sorglos'
-    : 'Auftragsbestätigung Artist & Band – Rundum Sorglos')
+  document.setSubject(`Vertragsbestätigung ${pkg.builderSlug === 'business' ? 'Business' : 'Artist & Band'} – ${copy.title}`)
 
   const formattedPrice = new Intl.NumberFormat('de-DE', {
     style: 'currency',
     currency: order.currency,
   }).format(amountCents / 100)
+  const customerName = stripeCustomer?.individual_name
+    || (fulfillment ? `${fulfillment.first_name} ${fulfillment.last_name}`.trim() : '')
+  const businessName = stripeCustomer?.business_name || fulfillment?.company_name
+  const customerEmail = stripeCustomer?.email || order.customer_email || fulfillment?.communication_email
 
   const sections = [
     {
@@ -117,76 +134,80 @@ export async function createOrderConfirmationPdf({ order, fulfillment, amountCen
       entries: [
         field('Bestellnummer', order.id),
         field('Bestelldatum', formatDate(order.created_at)),
-        ...(!isBusiness && artistName ? [field('Künstler-/Bandname', artistName)] : []),
-        field('Paket', isBusiness ? 'Business – Rundum Sorglos' : 'Artist & Band – Rundum Sorglos'),
+        field('Builder', isBusiness ? 'Business' : 'Artist & Band'),
+        field('Paket', copy.title),
         field('Einmaliger Paketpreis', formattedPrice),
+        field('Steuerhinweis', CHECKOUT_TAX_NOTICE),
         field('Zahlungsstatus', 'Bezahlt'),
-        ...(isBusiness ? [field('Dokumenthinweis', 'Auftragsbestätigung – keine Rechnung')] : []),
       ],
     },
     {
-      title: 'Auftraggeber',
+      title: 'Anbieter und Kunde',
       entries: [
-        ...(isBusiness
+        field('Anbieter', 'Matthias Brehm, Nordwestring 89, 90419 Nürnberg, Deutschland'),
+        field('Anbieter-E-Mail', 'kontakt@matthiasbrehm.de'),
+        ...(customerName ? [field('Kundenname', customerName)] : []),
+        ...(businessName ? [field('Firmenname', businessName)] : []),
+        field('Kunden-E-Mail', customerEmail),
+        ...(fulfillment
           ? [
-            field('Auftraggebertyp', fulfillment.customer_type === 'company'
-              ? 'Unternehmen'
-              : 'Selbstständige Person'),
-            ...(fulfillment.company_name ? [field('Firma / Geschäftsbezeichnung', fulfillment.company_name)] : []),
+            field('Auftraggebertyp', isBusiness
+              ? fulfillment.customer_type === 'company' ? 'Unternehmen' : 'Selbstständige Person'
+              : 'Privatperson'),
+            field('Rechnungsanschrift', [
+              fulfillment.billing_street,
+              `${fulfillment.billing_postal_code} ${fulfillment.billing_city}`,
+              fulfillment.billing_country_code,
+            ].join(', ')),
           ]
           : []),
-        field('Name', `${fulfillment.first_name} ${fulfillment.last_name}`),
-        field('Rechnungsanschrift', [
-          fulfillment.billing_street,
-          `${fulfillment.billing_postal_code} ${fulfillment.billing_city}`,
-          fulfillment.billing_country_code,
-        ].join(', ')),
-        field('E-Mail für die Auftragskommunikation', fulfillment.communication_email),
       ],
     },
-    {
-      title: 'Domain',
-      entries: [
-        field('Gewünschte neue .de-Domain', fulfillment.desired_domain),
-        ...(fulfillment.alternative_domain
-          ? [field('Alternative .de-Domain', fulfillment.alternative_domain)]
-          : []),
-        ...(fulfillment.domain_holder_differs
-          ? [field('Abweichender Domaininhaber', [
-            ...(fulfillment.domain_holder_type === 'organization'
-              ? [isBusiness
-                ? `Organisation: ${fulfillment.domain_holder_organization_name}`
-                : fulfillment.domain_holder_organization_name]
-              : [isBusiness
-                ? `Person: ${fulfillment.domain_holder_first_name} ${fulfillment.domain_holder_last_name}`
-                : `${fulfillment.domain_holder_first_name} ${fulfillment.domain_holder_last_name}`]),
-            fulfillment.domain_holder_street,
-            `${fulfillment.domain_holder_postal_code} ${fulfillment.domain_holder_city}`,
-            fulfillment.domain_holder_country_code,
-            fulfillment.domain_holder_email,
-          ].join(', '))]
-          : []),
-      ],
-    },
+    ...(artistName ? [{
+      title: 'Website',
+      entries: [field('Künstler-/Bandname aus dem Entwurf', artistName)],
+    }] : []),
     {
       title: 'Vereinbarte Leistungen',
       entries: [
-        'Einrichtung einer statischen Website bei Hostinger.',
-        'Einrichtung eines Hostinger-Accounts mit der E-Mail-Adresse des Kunden.',
-        'Registrierung einer neuen verfügbaren .de-Domain auf den angegebenen Domaininhaber.',
-        'LeanWebsite Studio übernimmt den ersten Hostingmonat und das erste Domainjahr.',
-        'Ab dem zweiten Hostingmonat trägt der Kunde die Hostingkosten.',
-        'Ab dem zweiten Jahr trägt der Kunde die Kosten der Domainverlängerung.',
-        'Es wird kein E-Mail-Postfach eingerichtet.',
-        'Bestehende Domains werden nicht übernommen.',
-        'Die Veröffentlichung erfolgt in der Regel innerhalb von fünf Werktagen nach Eingang aller erforderlichen Informationen und Zugänge.',
-      ].map((value) => ({ type: 'bullet', value })),
+        { type: 'paragraph', value: copy.description },
+        ...(copy.included ?? []).map((value) => ({ type: 'bullet', value })),
+        ...(copy.excluded ?? []).map((value) => ({ type: 'bullet', value: `Nicht enthalten: ${value}` })),
+      ],
     },
+    ...(isManaged ? [
+      {
+        title: 'Hosting und Domain – Rundum Sorglos',
+        entries: [
+          { type: 'paragraph', value: HOSTING_DOMAIN_DETAILS },
+          field('Gewünschte neue .de-Domain', fulfillment.desired_domain),
+          ...(fulfillment.alternative_domain
+            ? [field('Alternative .de-Domain', fulfillment.alternative_domain)]
+            : []),
+          ...(fulfillment.domain_holder_differs
+            ? [field('Abweichender Domaininhaber', [
+              ...(fulfillment.domain_holder_type === 'organization'
+                ? [`Organisation: ${fulfillment.domain_holder_organization_name}`]
+                : [`Person: ${fulfillment.domain_holder_first_name} ${fulfillment.domain_holder_last_name}`]),
+              fulfillment.domain_holder_street,
+              `${fulfillment.domain_holder_postal_code} ${fulfillment.domain_holder_city}`,
+              fulfillment.domain_holder_country_code,
+              fulfillment.domain_holder_email,
+            ].join(', '))]
+            : []),
+          field('Zustimmungsversion', fulfillment.hostinger_consent_version),
+          field('Zugestimmt am', formatDate(fulfillment.hostinger_consented_at)),
+        ],
+      },
+    ] : []),
     {
-      title: 'Zustimmung',
+      title: 'Widerrufsbelehrung',
       entries: [
-        field('Zustimmungsversion', fulfillment.hostinger_consent_version),
-        field('Zugestimmt am', formatDate(fulfillment.hostinger_consented_at)),
+        { type: 'paragraph', value: `Vollständige Widerrufsbelehrung: ${withdrawalUrl}` },
+        ...WITHDRAWAL_NOTICE.flatMap((section) => [
+          { type: 'paragraph', value: section.title },
+          ...section.paragraphs.map((value) => ({ type: 'paragraph', value })),
+        ]),
       ],
     },
   ]
@@ -206,8 +227,8 @@ export async function createOrderConfirmationPdf({ order, fulfillment, amountCen
       color: MUTED,
     })
     page.drawText(continuation
-      ? 'Auftragsbestätigung – Rundum Sorglos (Fortsetzung)'
-      : 'Auftragsbestätigung – Rundum Sorglos', {
+      ? 'Vertragsbestätigung (Fortsetzung)'
+      : 'Vertragsbestätigung', {
       x: MARGIN,
       y: PAGE_HEIGHT - 60 - 19,
       size: 16,
@@ -243,6 +264,21 @@ export async function createOrderConfirmationPdf({ order, fulfillment, amountCen
   }
 
   const drawEntry = (entry, x, width) => {
+    if (entry.type === 'paragraph') {
+      for (const line of entry.lines) {
+        page.drawText(line, {
+          x,
+          y: PAGE_HEIGHT - y - 9.5,
+          size: 9.5,
+          font: regular,
+          color: TEXT,
+        })
+        y += 12
+      }
+      y += 3
+      return
+    }
+
     if (entry.type === 'bullet') {
       page.drawRectangle({
         x: x + 1,
@@ -290,45 +326,22 @@ export async function createOrderConfirmationPdf({ order, fulfillment, amountCen
     y += 2
   }
 
-  const preparedColumns = [
-    sections.slice(0, 3).map((section) => prepareSection(section, COLUMN_WIDTH, regular, bold))
-      .concat([prepareSection(sections[4], COLUMN_WIDTH, regular, bold)]),
-    [prepareSection(sections[3], COLUMN_WIDTH, regular, bold)],
-  ]
-  const columnHeights = preparedColumns.map((column) =>
-    column.reduce((height, section) => height + sectionHeight(section) + 7, 0))
-  const availableHeight = CONTENT_BOTTOM - CONTENT_TOP
+  const prepared = sections.map((section) => prepareSection(section, CONTENT_WIDTH, regular, bold))
+  addPage()
 
-  if (columnHeights.every((height) => height <= availableHeight)) {
-    addPage()
-    const starts = [MARGIN, MARGIN + COLUMN_WIDTH + COLUMN_GAP]
-    preparedColumns.forEach((column, columnIndex) => {
-      y = CONTENT_TOP
-      for (const section of column) {
-        drawSectionHeading(section.title, starts[columnIndex], COLUMN_WIDTH)
-        for (const entry of section.entries) drawEntry(entry, starts[columnIndex], COLUMN_WIDTH)
-        y += 7
+  for (const section of prepared) {
+    if (y + 24 > CONTENT_BOTTOM) addPage(true)
+    drawSectionHeading(section.title, MARGIN, CONTENT_WIDTH)
+
+    for (const entry of section.entries) {
+      const heightNeeded = entryHeight(entry)
+      if (y + heightNeeded > CONTENT_BOTTOM && y > CONTENT_TOP + 24) {
+        addPage(true)
+        drawSectionHeading(`${section.title} – Fortsetzung`, MARGIN, CONTENT_WIDTH)
       }
-    })
-  } else {
-    const prepared = sections.map((section) => prepareSection(section, CONTENT_WIDTH, regular, bold))
-    addPage()
-
-    for (const section of prepared) {
-      const height = sectionHeight(section)
-      if (y + height > CONTENT_BOTTOM && y > CONTENT_TOP) addPage(true)
-      drawSectionHeading(section.title, MARGIN, CONTENT_WIDTH)
-
-      for (const entry of section.entries) {
-        const heightNeeded = entryHeight(entry)
-        if (y + heightNeeded > CONTENT_BOTTOM && y > CONTENT_TOP + 24) {
-          addPage(true)
-          drawSectionHeading(`${section.title} – Fortsetzung`, MARGIN, CONTENT_WIDTH)
-        }
-        drawEntry(entry, MARGIN, CONTENT_WIDTH)
-      }
-      y += 5
+      drawEntry(entry, MARGIN, CONTENT_WIDTH)
     }
+    y += 5
   }
 
   pages.forEach((currentPage, index) => {

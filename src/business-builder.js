@@ -1,5 +1,13 @@
 import { generateBusinessHtml } from '../shared/business-template.js'
+import {
+  HOSTING_DOMAIN_DETAILS,
+  PACKAGE_COPY,
+  POST_PURCHASE_CHANGES_TEXT,
+  POST_PURCHASE_CHANGES_TITLE,
+  CHECKOUT_TAX_NOTICE,
+} from '../shared/builder-copy.js'
 import { getPackagesForBuilder } from '../shared/packages.js'
+import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { setupBusinessMobileView } from './business-mobile-view.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
@@ -562,6 +570,11 @@ export function renderBusinessBuilder(app) {
                 <h3 id="business-purchase-title">Deine Website kaufen</h3>
                 <p class="hint">Wähle ein Paket. Für den Checkout werden Firmenname (bei Unternehmen) und eine Kontakt-E-Mail im Website-Entwurf benötigt.</p>
                 <div class="package-options" id="business-packages" role="radiogroup" aria-label="Website-Paket"></div>
+                <aside class="package-changes-note">
+                  <h4>${POST_PURCHASE_CHANGES_TITLE}</h4>
+                  <p>${POST_PURCHASE_CHANGES_TEXT}</p>
+                </aside>
+                <p class="business-tax-note">${CHECKOUT_TAX_NOTICE}</p>
                 <form id="business-fulfillment" class="business-fulfillment" hidden novalidate>
                   <fieldset id="business-fulfillment-fields" disabled>
                     <legend>Auftragsangaben für Rundum sorglos</legend>
@@ -655,16 +668,24 @@ export function renderBusinessBuilder(app) {
                       </div>
                     </div>
                     <section class="business-hostinger-consent" aria-labelledby="business-hostinger-title">
-                      <h4 id="business-hostinger-title">Zustimmung zu Hosting und Domain</h4>
+                      <h4 id="business-hostinger-title">Hosting und Domain – Rundum Sorglos</h4>
                       <p id="business-hostinger-copy"></p>
                       <label class="business-consent-check">
                         <input name="hostingerConsent" type="checkbox" required>
-                        <span>Ich stimme den oben beschriebenen Hostinger-Bedingungen zu. *</span>
+                        <span>${HOSTINGER_CONSENT_TEXT}</span>
                       </label>
                     </section>
                   </fieldset>
                 </form>
-                <button class="btn primary big" id="business-checkout" type="button">Weiter zum sicheren Checkout <span aria-hidden="true">→</span></button>
+                <section id="business-checkout-review" class="business-checkout-review" aria-labelledby="business-checkout-review-title" hidden>
+                  <h4 id="business-checkout-review-title">Bestellung prüfen</h4>
+                  <div id="business-checkout-review-content"></div>
+                  <div class="business-checkout-review-actions">
+                    <button class="btn" id="business-review-edit" type="button">Zurück zur Auswahl</button>
+                    <button class="btn primary" id="business-review-confirm" type="button">Weiter zum zahlungspflichtigen Checkout</button>
+                  </div>
+                </section>
+                <button class="btn primary big" id="business-checkout" type="button">Bestellung prüfen <span aria-hidden="true">→</span></button>
                 <p class="checkout-status" id="business-checkout-status" role="status" aria-live="polite"></p>
               </section>
             </div>
@@ -675,6 +696,11 @@ export function renderBusinessBuilder(app) {
             <span id="step-count"></span>
             <button class="btn primary" id="next" type="button">Weiter →</button>
           </div>
+          <nav class="business-privacy-links" aria-label="Rechtliche Informationen">
+            <a href="/datenschutz">Datenschutzerklärung</a>
+            <a href="/widerruf">Widerruf</a>
+            <a href="https://matthiasbrehm.de/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
+          </nav>
           <div class="validation-warning" id="validation-warning" role="status" aria-live="polite" hidden></div>
           <div class="draft-conflict" id="draft-conflict" hidden>
             <p id="draft-conflict-message"></p>
@@ -723,9 +749,13 @@ export function renderBusinessBuilder(app) {
   const fulfillmentForm = $('#business-fulfillment')
   const fulfillmentFields = $('#business-fulfillment-fields')
   const checkoutButton = $('#business-checkout')
+  const checkoutReview = $('#business-checkout-review')
+  const checkoutReviewContent = $('#business-checkout-review-content')
+  const reviewEditButton = $('#business-review-edit')
+  const reviewConfirmButton = $('#business-review-confirm')
   const checkoutStatus = $('#business-checkout-status')
   const packages = getPackagesForBuilder('business')
-  $('#business-hostinger-copy').textContent = HOSTINGER_CONSENT_TEXT
+  $('#business-hostinger-copy').textContent = HOSTING_DOMAIN_DETAILS
   let localDataExists = localState.exists
   let localDataInvalid = localState.invalid
   let preserveLocalRaw = localState.invalid
@@ -957,8 +987,10 @@ export function renderBusinessBuilder(app) {
     <label class="package-option">
       <input type="radio" name="business-package" value="${item.code}" ${index === 0 ? 'checked' : ''}>
       <span class="package-option-copy">
-        <strong>${item.name}</strong>
-        <span>Deine Website als HTML-Datei. Der Leistungsumfang richtet sich nach dem gewählten Paket.</span>
+        <strong>${PACKAGE_COPY[item.code].title}</strong>
+        <strong class="package-option-tagline">${PACKAGE_COPY[item.code].tagline}</strong>
+        <span class="package-option-description">${PACKAGE_COPY[item.code].description}</span>
+        ${PACKAGE_COPY[item.code].included ? `<span class="package-option-list-title">Enthalten</span><ul>${PACKAGE_COPY[item.code].included.map((feature) => `<li>${feature}</li>`).join('')}</ul><span class="package-option-list-title">Nicht enthalten</span><ul>${PACKAGE_COPY[item.code].excluded.map((feature) => `<li>${feature}</li>`).join('')}</ul>` : ''}
       </span>
       <strong class="package-option-price">${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(item.amountCents / 100)}</strong>
     </label>
@@ -1730,7 +1762,11 @@ export function renderBusinessBuilder(app) {
     clearTimeout(autoSaveTimer)
     saveLatest().catch(() => {})
   })
-  packageBox.addEventListener('change', updateFulfillmentVisibility)
+  packageBox.addEventListener('change', () => {
+    checkoutReview.hidden = true
+    checkoutButton.hidden = false
+    updateFulfillmentVisibility()
+  })
   fulfillmentForm.elements.customerType.addEventListener('change', () => {
     updateCustomerTypeFields()
     clearFulfillmentErrors()
@@ -1746,7 +1782,41 @@ export function renderBusinessBuilder(app) {
   fulfillmentForm.addEventListener('input', clearFulfillmentErrors)
   fulfillmentForm.addEventListener('change', clearFulfillmentErrors)
 
-  checkoutButton.addEventListener('click', async () => {
+  function showCheckoutReview() {
+    if (checkoutPending) return
+
+    const selectedPackage = selectedPackageCode()
+    if (!packages.some((item) => item.code === selectedPackage)) {
+      setCheckoutStatus('Bitte wähle ein verfügbares Website-Paket aus.', 'error')
+      return
+    }
+
+    const purchaseError = validatePurchase()
+    if (purchaseError) {
+      showPurchaseError(purchaseError)
+      return
+    }
+
+    try {
+      if (selectedPackage === BUSINESS_FULFILLMENT_PACKAGE_CODE) collectBusinessFulfillment(fulfillmentForm)
+      checkoutReviewContent.innerHTML = renderCheckoutReview({
+        packageCode: selectedPackage,
+        builderLabel: 'Business',
+      })
+      checkoutReview.hidden = false
+      checkoutButton.hidden = true
+      checkoutReview.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      setCheckoutStatus('')
+    } catch (error) {
+      if (error instanceof BusinessFulfillmentValidationError) {
+        showFulfillmentError(error)
+      } else {
+        setCheckoutStatus(error.message, 'error')
+      }
+    }
+  }
+
+  async function beginCheckout() {
     if (checkoutPending) return
 
     const selectedPackage = selectedPackageCode()
@@ -1823,7 +1893,15 @@ export function renderBusinessBuilder(app) {
       updateSaveControls()
       setCheckoutStatus(error.message, 'error')
     }
+  }
+
+  checkoutButton.addEventListener('click', showCheckoutReview)
+  reviewEditButton.addEventListener('click', () => {
+    checkoutReview.hidden = true
+    checkoutButton.hidden = false
+    checkoutButton.focus()
   })
+  reviewConfirmButton.addEventListener('click', beginCheckout)
   retryButton.addEventListener('click', () => {
     retryButton.disabled = true
     restoreDraft().finally(() => { retryButton.disabled = false })

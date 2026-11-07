@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { inflateSync } from 'node:zlib'
 import { beforeEach, describe, it } from 'node:test'
 import { PDFDocument } from 'pdf-lib'
 import { createOrderConfirmationPdf } from '../api/_lib/order-confirmation-pdf.js'
 import { createOrderConfirmationHandler } from '../api/orders/confirmation.js'
+import { WITHDRAWAL_NOTICE } from '../shared/withdrawal-copy.js'
 import { generateAccessToken } from '../api/_lib/tokens.js'
 import { buildRequest, buildResponse, createFakeDb, createFakeStorage } from './helpers/fakes.js'
 
@@ -54,6 +56,8 @@ function paidOrder(overrides = {}) {
     amount_cents: 7900,
     currency: 'EUR',
     status: 'paid',
+    stripe_checkout_session_id: 'cs_test_confirm',
+    customer_email: 'ada@example.de',
     created_at: new Date('2026-10-24T09:00:00.000Z'),
     paid_at: new Date('2026-10-25T10:00:00.000Z'),
     ...overrides,
@@ -82,6 +86,7 @@ describe('POST /api/orders/confirmation', () => {
   let handler
   let draftToken
   let otherToken
+  let stripe
 
   const send = async (body, { headers = JSON_HEADERS, method = 'POST' } = {}) => {
     const res = buildResponse()
@@ -91,9 +96,38 @@ describe('POST /api/orders/confirmation', () => {
 
   const credentials = (overrides = {}) => ({ draftId: DRAFT_ID, draftToken, ...overrides })
 
+  it('keeps the PDF withdrawal copy aligned with the published withdrawal text', async () => {
+    const markdown = (await readFile(new URL('../src/data/withdrawal-page.md', import.meta.url), 'utf8'))
+      .replace(/\[([^\]]+)\]\([^)]+\)/gu, '$1')
+      .replace(/\*\*/gu, '')
+      .replace(/^#{1,6}\s+/gmu, '')
+      .replace(/\s+/gu, ' ')
+    for (const section of WITHDRAWAL_NOTICE) {
+      assert.ok(markdown.includes(section.title), `published page should contain ${section.title}`)
+      for (const paragraph of section.paragraphs) {
+        assert.ok(markdown.includes(paragraph.replace(/\s+/gu, ' ')), `published page should contain ${paragraph}`)
+      }
+    }
+  })
+
   beforeEach(() => {
     db = createFakeDb()
     storage = createFakeStorage()
+    stripe = {
+      checkout: {
+        sessions: {
+          retrieve: async (id) => ({
+            id,
+            payment_status: 'paid',
+            customer_details: {
+              individual_name: 'Ada Beispiel',
+              business_name: null,
+              email: 'ada@example.de',
+            },
+          }),
+        },
+      },
+    }
     const owner = generateAccessToken()
     const other = generateAccessToken()
     draftToken = owner.token
@@ -108,7 +142,12 @@ describe('POST /api/orders/confirmation', () => {
     })
     db.orders.push(paidOrder())
     db.fulfillments.set(ORDER_ID, { ...fulfillment })
-    handler = createOrderConfirmationHandler({ getDb: () => db, storage })
+    handler = createOrderConfirmationHandler({
+      getDb: () => db,
+      storage,
+      getStripeClient: () => stripe,
+      siteUrl: 'https://leanwebsite.example',
+    })
   })
 
   it('serves a paid Rundum-Sorglos PDF with the stored order and fulfillment information', async () => {
@@ -117,19 +156,21 @@ describe('POST /api/orders/confirmation', () => {
 
     assert.equal(response.statusCode, 200)
     assert.equal(response.headers['Content-Type'], 'application/pdf')
-    assert.match(response.headers['Content-Disposition'], /attachment; filename="auftragsbestaetigung-rundum-sorglos\.pdf"/)
+    assert.match(response.headers['Content-Disposition'], /attachment; filename="vertragsbestaetigung\.pdf"/)
     assert.equal(response.headers['Cache-Control'], 'private, no-store, max-age=0')
     assert.equal(response.headers.Pragma, 'no-cache')
     assert.equal(response.headers.Expires, '0')
     assert.equal(response.headers['X-Content-Type-Options'], 'nosniff')
     assert.match(response.body.toString('ascii', 0, 8), /^%PDF-1\./)
-    assert.equal((await PDFDocument.load(response.body)).getPageCount(), 1)
+    assert.ok((await PDFDocument.load(response.body)).getPageCount() > 1)
 
     const content = decodedText(response.body)
     for (const expected of [
       'LeanWebsite Studio',
-      'Auftragsbestätigung',
+      'Vertragsbest',
       '11111111-1111-4111-8111-111111111111',
+      'Matthias Brehm',
+      'Kunden-E-Mail',
       'Ada & Die Beispiele',
       'Ada Beispiel',
       'Musterstraße 1',
@@ -141,13 +182,20 @@ describe('POST /api/orders/confirmation', () => {
       'Bezahlt',
       'hostinger-setup-v1',
       '25. Oktober 2026',
-      'Einrichtung einer statischen Website bei Hostinger.',
-      'ersten Hostingmonat und das erste Domainjahr',
-      'zweiten Hostingmonat trägt der Kunde die Hostingkosten.',
-      'zweiten Jahr trägt der Kunde die Kosten der Domainverlängerung.',
-      'Es wird kein E-Mail-Postfach eingerichtet.',
-      'Bestehende Domains werden nicht übernommen.',
+      'Einrichtung deines Hostings',
+      'Der erste Hostingmonat und das erste Jahr deiner .de-Domain',
+      'monatlicher Vertragslaufzeit eingerichtet',
+      '9,51',
+      '14,27',
+      'E-Mail-Postf',
+      'bestehenden Domains übernommen',
       'fünf Werktagen',
+      'Gemäß',
+      '§ 19 UStG',
+      'Widerrufsbelehrung',
+      'https://leanwebsite.example/widerruf',
+      'vierzehn Tagen',
+      'Muster-Widerrufsformular',
     ]) {
       assert.ok(content.includes(expected), `PDF should contain ${expected}`)
     }
@@ -194,7 +242,7 @@ describe('POST /api/orders/confirmation', () => {
     const response = await send(credentials())
 
     assert.equal(response.statusCode, 200)
-    assert.equal((await PDFDocument.load(response.body)).getPageCount(), 1)
+    assert.ok((await PDFDocument.load(response.body)).getPageCount() > 1)
     const content = decodedText(response.body)
     for (const expected of [
       'Bestellnummer',
@@ -209,14 +257,34 @@ describe('POST /api/orders/confirmation', () => {
       'ada@example.de',
       'musterbetrieb.de',
       'Organisation: Beispiel Verein eV',
-      'keine Rechnung',
       'hostinger-setup-v1',
-      'Hostingkosten.',
-      'Domainverlängerung.',
+      '9,51',
+      '14,27',
     ]) {
       assert.ok(content.includes(expected), `Business PDF should contain ${expected}`)
     }
     assert.equal(content.includes('Ada & Die Beispiele'), false)
+  })
+
+  it('uses the existing 479 euro price in a Business Rundum-Sorglos PDF', async () => {
+    const pdf = await createOrderConfirmationPdf({
+      order: paidOrder({
+        package_code: 'business-rundum-sorglos',
+        amount_cents: 47900,
+      }),
+      fulfillment: businessFulfillment,
+      amountCents: 47900,
+      stripeCustomer: {
+        individual_name: 'Ada Beispiel',
+        business_name: 'Musterbetrieb GmbH',
+        email: 'ada@example.de',
+      },
+      withdrawalUrl: 'https://leanwebsite.example/widerruf',
+    })
+    const content = decodedText(Buffer.from(pdf))
+    assert.ok(content.includes('479,00'))
+    assert.ok(content.includes('Business'))
+    assert.ok(content.includes('Rundum Sorglos'))
   })
 
   it('creates a self-employed confirmation with a person domain holder and long fields on clean extra pages', async () => {
@@ -277,11 +345,32 @@ describe('POST /api/orders/confirmation', () => {
     assert.doesNotMatch(JSON.stringify(response.body), /ada@example|Musterstraße/)
   })
 
-  it('does not provide this document for other packages', async () => {
+  it('serves a paid Code & Go contract confirmation without fulfillment data', async () => {
     db.orders[0].package_code = 'artist-band-code-and-go'
+    db.orders[0].amount_cents = 3900
     const response = await send(credentials())
-    assert.equal(response.statusCode, 404)
+    assert.equal(response.statusCode, 200)
     assert.equal(db.queries.some((query) => query.includes('FROM order_fulfillment WHERE order_id')), false)
+    const content = decodedText(response.body)
+    assert.ok(content.includes('Code & Go'))
+    assert.ok(content.includes('39,00'))
+    assert.ok(content.includes('ada@example.de'))
+    assert.ok(content.includes('HTML-Download'))
+  })
+
+  it('serves a paid Business Pure Code confirmation without fulfillment data', async () => {
+    db.orders[0] = paidOrder({
+      package_code: 'business-pure-code',
+      amount_cents: 29900,
+    })
+    const response = await send(credentials())
+    assert.equal(response.statusCode, 200)
+    const content = decodedText(response.body)
+    assert.ok(content.includes('Business'))
+    assert.ok(content.includes('Pure Code'))
+    assert.ok(content.includes('299,00'))
+    assert.ok(content.includes('ada@example.de'))
+    assert.ok(content.includes('Gemäß'))
   })
 
   it('does not provide a Business confirmation to an unauthorized or unpaid draft', async () => {

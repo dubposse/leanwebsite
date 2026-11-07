@@ -3,14 +3,21 @@ import { builders } from './data/builders.js'
 import { renderArtistBandBuilder } from './artist-band-builder.js'
 import { renderBusinessBuilder } from './business-builder.js'
 import { renderOrderComplete } from './order-complete.js'
+import { renderPrivacyPolicyPage } from './privacy-policy-page.js'
+import { renderWithdrawalPage } from './withdrawal-page.js'
 
 const app = document.querySelector('#app')
+const path = window.location.pathname.replace(/\/$/, '')
 
-if (window.location.pathname.replace(/\/$/, '') === '/builder/artist-band') {
+if (path === '/datenschutz') {
+  renderPrivacyPolicyPage(app)
+} else if (path === '/widerruf') {
+  renderWithdrawalPage(app)
+} else if (path === '/builder/artist-band') {
   renderArtistBandBuilder(app)
-} else if (window.location.pathname.replace(/\/$/, '') === '/builder/business') {
+} else if (path === '/builder/business') {
   renderBusinessBuilder(app)
-} else if (window.location.pathname.replace(/\/$/, '') === '/order/complete') {
+} else if (path === '/order/complete') {
   renderOrderComplete(app)
 } else {
 app.innerHTML = `
@@ -81,6 +88,11 @@ app.innerHTML = `
       <span>LeanWebsite</span>
     </a>
     <p>Ein guter Anfang für deinen Webauftritt.</p>
+    <nav class="site-footer-links" aria-label="Rechtliche Informationen">
+      <a href="/datenschutz">Datenschutzerklärung</a>
+      <a href="/widerruf">Widerruf</a>
+      <a href="https://matthiasbrehm.de/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
+    </nav>
   </footer>
 `
 

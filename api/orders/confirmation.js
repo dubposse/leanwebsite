@@ -3,10 +3,16 @@ import { getSql } from '../_lib/db.js'
 import { HttpError, readJsonBody, sendError } from '../_lib/http.js'
 import { sendJson } from '../_lib/json.js'
 import { getObject } from '../_lib/storage.js'
+import { getStripe } from '../_lib/stripe.js'
 
 export const config = { api: { bodyParser: false } }
 
-export function createOrderConfirmationHandler({ getDb = getSql, storage = { getObject } } = {}) {
+export function createOrderConfirmationHandler({
+  getDb = getSql,
+  storage = { getObject },
+  getStripeClient = getStripe,
+  siteUrl = process.env.SITE_URL,
+} = {}) {
   return async function orderConfirmation(req, res) {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0')
     res.setHeader('Pragma', 'no-cache')
@@ -19,7 +25,13 @@ export function createOrderConfirmationHandler({ getDb = getSql, storage = { get
 
     try {
       const body = await readJsonBody(req, 4 * 1024)
-      const file = await loadPaidOrderConfirmation({ sql: getDb(), storage, body })
+      const file = await loadPaidOrderConfirmation({
+        sql: getDb(),
+        storage,
+        stripe: getStripeClient(),
+        siteUrl,
+        body,
+      })
 
       res.setHeader('Content-Type', 'application/pdf')
       res.setHeader(

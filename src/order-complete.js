@@ -1,6 +1,12 @@
 const POLL_INTERVAL_MS = 4000
 const MAX_POLLS = 45
 const CONFIRMATION_PACKAGE_CODES = new Set([
+  'artist-band-code-and-go',
+  'artist-band-rundum-sorglos',
+  'business-pure-code',
+  'business-rundum-sorglos',
+])
+const EMAIL_CONFIRMATION_PACKAGE_CODES = new Set([
   'artist-band-rundum-sorglos',
   'business-rundum-sorglos',
 ])
@@ -80,10 +86,13 @@ export function renderOrderComplete(app) {
           <p id="oc-message" class="ab-status" data-kind="pending">Bestellstatus wird geprüft …</p>
           <p id="oc-notice" class="ab-field-hint" hidden></p>
           <div id="oc-confirmation" class="oc-confirmation" hidden>
-            <p>Vielen Dank für deine Bestellung. Bitte lade deine Auftragsbestätigung als PDF herunter und sende sie als Anhang per E-Mail an:</p>
-            <p class="oc-contact-email">kontakt@matthiasbrehm.de</p>
-            <p>Sobald uns deine vollständigen Angaben vorliegen, beginnen wir mit der Einrichtung deiner Website.</p>
-            <button id="oc-confirmation-download" class="ab-checkout-button" type="button">Auftragsbestätigung als PDF herunterladen <span aria-hidden="true">↓</span></button>
+            <p>Vielen Dank für deine Bestellung. Deine Vertragsbestätigung steht als PDF bereit.</p>
+            <div id="oc-email-confirmation-flow" hidden>
+              <p>Bitte sende die Auftragsbestätigung bei Rundum Sorglos als Anhang per E-Mail an:</p>
+              <p class="oc-contact-email">kontakt@matthiasbrehm.de</p>
+              <p>Sobald uns deine vollständigen Angaben vorliegen, beginnen wir mit der Einrichtung deiner Website.</p>
+            </div>
+            <button id="oc-confirmation-download" class="ab-checkout-button" type="button">Vertragsbestätigung als PDF herunterladen <span aria-hidden="true">↓</span></button>
           </div>
           <div class="oc-actions">
             <button id="oc-download" class="ab-checkout-button" type="button" hidden>Website herunterladen <span aria-hidden="true">↓</span></button>
@@ -98,6 +107,7 @@ export function renderOrderComplete(app) {
   const notice = app.querySelector('#oc-notice')
   const downloadButton = app.querySelector('#oc-download')
   const confirmationPanel = app.querySelector('#oc-confirmation')
+  const emailConfirmationFlow = app.querySelector('#oc-email-confirmation-flow')
   const confirmationDownloadButton = app.querySelector('#oc-confirmation-download')
   const refreshButton = app.querySelector('#oc-refresh')
   const builderLink = app.querySelector('#oc-builder')
@@ -147,8 +157,9 @@ export function renderOrderComplete(app) {
     }
 
     if (order.status === 'paid' && supportsOrderConfirmation(order.package?.code)) {
-      show('Deine Zahlung wurde bestätigt!', 'success')
+      show('Deine Zahlung wurde bestätigt. Vertragsbestätigung und Website stehen bereit.', 'success')
       confirmationPanel.hidden = false
+      emailConfirmationFlow.hidden = !EMAIL_CONFIRMATION_PACKAGE_CODES.has(order.package?.code)
       downloadButton.hidden = !order.downloadAvailable
     } else if (order.status === 'paid' && order.downloadAvailable) {
       show(`Zahlung bestätigt${order.package ? ` – Paket „${order.package.name}“` : ''}. Deine Website steht bereit.`, 'success')
@@ -230,7 +241,7 @@ export function renderOrderComplete(app) {
         show(
           code === 'not_paid'
             ? 'Die Zahlung ist noch nicht bestätigt.'
-            : 'Die Auftragsbestätigung konnte gerade nicht bereitgestellt werden. Bitte versuche es später erneut.',
+            : 'Die Vertragsbestätigung konnte gerade nicht bereitgestellt werden. Bitte versuche es später erneut.',
           'error',
         )
         return
@@ -245,7 +256,7 @@ export function renderOrderComplete(app) {
       link.click()
       link.remove()
       setTimeout(() => URL.revokeObjectURL(url), 10000)
-      show('Auftragsbestätigung heruntergeladen.', 'success')
+      show('Vertragsbestätigung heruntergeladen.', 'success')
     } catch {
       show('Der PDF-Download ist fehlgeschlagen. Bitte versuche es erneut.', 'error')
     } finally {

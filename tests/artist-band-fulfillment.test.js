@@ -108,8 +108,9 @@ describe('Artist & Band fulfillment UI data', () => {
 
   it('uses the consent wording associated with the existing server version', () => {
     assert.equal(HOSTINGER_CONSENT_VERSION, 'hostinger-setup-v1')
-    assert.match(HOSTINGER_CONSENT_TEXT, /ersten Hostingmonat und das erste Jahr der Domainregistrierung/)
-    assert.match(HOSTINGER_CONSENT_TEXT, /keine E-Mail-Postfächer eingerichtet/)
-    assert.match(HOSTINGER_CONSENT_TEXT, /fünf Werktagen/)
+    assert.equal(
+      HOSTINGER_CONSENT_TEXT,
+      'Ich beauftrage LeanWebsite Studio mit der beschriebenen einmaligen Einrichtung von Hosting und Domain sowie der Veröffentlichung meiner Website. Ich habe die Informationen zu Folgekosten und Übergabe zur Kenntnis genommen.',
+    )
   })
 })

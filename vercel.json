@@ -4,6 +4,10 @@
     { "source": "/builder/artist-band/", "destination": "/index.html" },
     { "source": "/builder/business", "destination": "/index.html" },
     { "source": "/builder/business/", "destination": "/index.html" },
+    { "source": "/datenschutz", "destination": "/index.html" },
+    { "source": "/datenschutz/", "destination": "/index.html" },
+    { "source": "/widerruf", "destination": "/index.html" },
+    { "source": "/widerruf/", "destination": "/index.html" },
     { "source": "/order/complete", "destination": "/index.html" },
     { "source": "/order/complete/", "destination": "/index.html" }
   ]

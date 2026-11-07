@@ -1,4 +1,12 @@
 import { getPackagesForBuilder } from '../shared/packages.js'
+import {
+  HOSTING_DOMAIN_DETAILS,
+  PACKAGE_COPY,
+  POST_PURCHASE_CHANGES_TEXT,
+  POST_PURCHASE_CHANGES_TITLE,
+  CHECKOUT_TAX_NOTICE,
+} from '../shared/builder-copy.js'
+import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
 import { setupArtistBandMobileView } from './artist-band-mobile-view.js'
 import {
@@ -234,6 +242,11 @@ export function renderArtistBandBuilder(app) {
             <section class="ab-card ab-buy-card" aria-labelledby="ab-package-title">
               <div class="ab-card-heading"><span>04</span><div><h2 id="ab-package-title">Deine Website kaufen</h2><p>Wähle das passende Artist/Band-Paket.</p></div></div>
               <div id="ab-packages" class="ab-packages"></div>
+              <aside class="ab-package-changes">
+                <h3>${POST_PURCHASE_CHANGES_TITLE}</h3>
+                <p>${POST_PURCHASE_CHANGES_TEXT}</p>
+              </aside>
+              <p class="ab-tax-note">${CHECKOUT_TAX_NOTICE}</p>
               <form id="ab-fulfillment" class="ab-fulfillment" hidden novalidate>
                 <fieldset id="ab-fulfillment-fields">
                   <legend class="ab-sr-only">Auftragsdaten für Rundum sorglos</legend>
@@ -270,14 +283,8 @@ export function renderArtistBandBuilder(app) {
                     <label class="ab-field">E-Mail-Adresse<input name="domainHolderEmail" type="email" maxlength="254" autocomplete="off"></label>
                   </div>
                   <section class="ab-hostinger-notes" aria-labelledby="ab-hostinger-title">
-                    <h4 id="ab-hostinger-title">Wichtige Hinweise zu Hosting und Domain</h4>
-                    <ul>
-                      <li>Das Hosting erfolgt ausschließlich bei Hostinger; eingerichtet wird eine neue, verfügbare .de-Domain. Bestehende Domains werden nicht übernommen.</li>
-                      <li>Der Hostinger-Account wird mit deiner angegebenen E-Mail-Adresse eingerichtet und nach der technischen Einrichtung an dich übergeben.</li>
-                      <li>LeanWebsite Studio übernimmt den ersten Hostingmonat und das erste Domainjahr. Ab dem zweiten Monat trägst du die Hostingkosten, ab dem zweiten Jahr die Kosten einer Domainverlängerung.</li>
-                      <li>Es wird kein E-Mail-Postfach eingerichtet. Die geltenden Hostinger-Preise und Vertragsbedingungen werden vor Abschluss der entsprechenden Verträge mitgeteilt.</li>
-                      <li>Die Veröffentlichung erfolgt normalerweise innerhalb von fünf Werktagen, nachdem alle erforderlichen Angaben und Zugänge vorliegen.</li>
-                    </ul>
+                    <h4 id="ab-hostinger-title">Hosting und Domain – Rundum Sorglos</h4>
+                    <p>${HOSTING_DOMAIN_DETAILS}</p>
                   </section>
                   <label class="ab-consent" data-consent-version="${HOSTINGER_CONSENT_VERSION}">
                     <input name="hostingerConsent" type="checkbox" required>
@@ -287,9 +294,17 @@ export function renderArtistBandBuilder(app) {
                 </fieldset>
               </form>
               <p class="ab-payment-note">Der angezeigte Preis wird beim Checkout serverseitig bestätigt. Es wird nichts automatisch heruntergeladen.</p>
+              <section id="ab-checkout-review" class="ab-checkout-review" aria-labelledby="ab-checkout-review-title" hidden>
+                <h3 id="ab-checkout-review-title">Bestellung prüfen</h3>
+                <div id="ab-checkout-review-content"></div>
+                <div class="ab-actions">
+                  <button id="ab-review-edit" class="ab-save-button" type="button">Zurück zur Auswahl</button>
+                  <button id="ab-review-confirm" class="ab-checkout-button" type="button">Weiter zum zahlungspflichtigen Checkout</button>
+                </div>
+              </section>
               <div class="ab-actions">
                 <button id="ab-save" class="ab-save-button" type="button">Entwurf speichern</button>
-                <button id="ab-checkout" class="ab-checkout-button" type="button">Weiter zum sicheren Checkout <span aria-hidden="true">→</span></button>
+                <button id="ab-checkout" class="ab-checkout-button" type="button">Bestellung prüfen <span aria-hidden="true">→</span></button>
               </div>
               <p id="ab-status" class="ab-status" role="status" aria-live="polite"></p>
               <button id="ab-new-draft" class="ab-text-button" type="button" hidden>Neuen Serverentwurf starten</button>
@@ -304,7 +319,15 @@ export function renderArtistBandBuilder(app) {
           </aside>
         </div>
       </main>
-      <footer class="ab-footer"><span>© ${new Date().getFullYear()} LeanWebsite</span><a href="/">Zurück zur Startseite</a></footer>
+      <footer class="ab-footer">
+        <span>© ${new Date().getFullYear()} LeanWebsite</span>
+        <nav class="ab-footer-links" aria-label="Rechtliche Informationen">
+          <a href="/datenschutz">Datenschutzerklärung</a>
+          <a href="/widerruf">Widerruf</a>
+          <a href="https://matthiasbrehm.de/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
+        </nav>
+        <a href="/">Zurück zur Startseite</a>
+      </footer>
     </div>
   `
 
@@ -317,6 +340,10 @@ export function renderArtistBandBuilder(app) {
   const checkoutButton = app.querySelector('#ab-checkout')
   const newDraftButton = app.querySelector('#ab-new-draft')
   const packageBox = app.querySelector('#ab-packages')
+  const checkoutReview = app.querySelector('#ab-checkout-review')
+  const checkoutReviewContent = app.querySelector('#ab-checkout-review-content')
+  const reviewEditButton = app.querySelector('#ab-review-edit')
+  const reviewConfirmButton = app.querySelector('#ab-review-confirm')
   const fulfillmentForm = app.querySelector('#ab-fulfillment')
   const fulfillmentFields = app.querySelector('#ab-fulfillment-fields')
   const domainHolderFields = app.querySelector('#ab-domain-holder-fields')
@@ -342,7 +369,12 @@ export function renderArtistBandBuilder(app) {
   packageBox.innerHTML = packages.map((item, index) => `
     <label class="ab-package">
       <input type="radio" name="package" value="${item.code}" ${index === 0 ? 'checked' : ''}>
-      <span class="ab-package-content"><span class="ab-package-name">${item.name}</span><span class="ab-package-description">Artist/Band-Website</span></span>
+      <span class="ab-package-content">
+        <span class="ab-package-name">${PACKAGE_COPY[item.code].title}</span>
+        <span class="ab-package-tagline">${PACKAGE_COPY[item.code].tagline}</span>
+        <span class="ab-package-description">${PACKAGE_COPY[item.code].description}</span>
+        ${PACKAGE_COPY[item.code].included ? `<span class="ab-package-list-title">Enthalten</span><ul>${PACKAGE_COPY[item.code].included.map((feature) => `<li>${feature}</li>`).join('')}</ul><span class="ab-package-list-title">Nicht enthalten</span><ul>${PACKAGE_COPY[item.code].excluded.map((feature) => `<li>${feature}</li>`).join('')}</ul>` : ''}
+      </span>
       <strong>${formatPackagePrice(item.amountCents)}</strong>
     </label>
   `).join('')
@@ -368,6 +400,8 @@ export function renderArtistBandBuilder(app) {
     const showFulfillment = packageRequiresFulfillment(selectedPackage)
     fulfillmentForm.hidden = !showFulfillment
     fulfillmentFields.disabled = !showFulfillment || checkoutPending || draftLocked
+    checkoutReview.hidden = true
+    checkoutButton.hidden = false
     if (!showFulfillment) showFulfillmentError('')
   }
 
@@ -691,7 +725,31 @@ export function renderArtistBandBuilder(app) {
     saveLatest().catch((error) => setStatus(error.message, 'error'))
   })
 
-  checkoutButton.addEventListener('click', async () => {
+  function showCheckoutReview() {
+    if (checkoutPending) return
+    const selectedPackage = packageBox.querySelector('input[name="package"]:checked')?.value
+    if (!packages.some((item) => item.code === selectedPackage)) {
+      setStatus('Bitte wähle ein gültiges Paket aus.', 'error')
+      return
+    }
+
+    try {
+      if (packageRequiresFulfillment(selectedPackage)) collectArtistBandFulfillment(fulfillmentForm)
+      checkoutReviewContent.innerHTML = renderCheckoutReview({
+        packageCode: selectedPackage,
+        builderLabel: 'Artist & Band',
+      })
+      checkoutReview.hidden = false
+      checkoutButton.hidden = true
+      checkoutReview.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      setStatus('')
+    } catch (error) {
+      showFulfillmentError(packageRequiresFulfillment(selectedPackage) ? error.message : '')
+      setStatus(error.message, 'error')
+    }
+  }
+
+  async function beginCheckout() {
     if (checkoutPending) return
     const selectedPackage = packageBox.querySelector('input[name="package"]:checked')?.value
     if (!packages.some((item) => item.code === selectedPackage)) {
@@ -744,7 +802,15 @@ export function renderArtistBandBuilder(app) {
       showFulfillmentError(selectedPackage === 'artist-band-rundum-sorglos' ? error.message : '')
       setStatus(error.message, 'error')
     }
+  }
+
+  checkoutButton.addEventListener('click', showCheckoutReview)
+  reviewEditButton.addEventListener('click', () => {
+    checkoutReview.hidden = true
+    checkoutButton.hidden = false
+    checkoutButton.focus()
   })
+  reviewConfirmButton.addEventListener('click', beginCheckout)
 
   newDraftButton.addEventListener('click', () => {
     if (savePromise || checkoutPending || coverPromise) {

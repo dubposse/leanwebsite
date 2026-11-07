@@ -6,11 +6,13 @@ import { getSql } from './db.js'
 import { assertValidKey, getObject, orderSnapshotKey } from './storage.js'
 import { BUSINESS_FULFILLMENT_PACKAGE_CODE, FULFILLMENT_PACKAGE_CODE } from './fulfillment.js'
 import { createOrderConfirmationPdf } from './order-confirmation-pdf.js'
+import { getStripe } from './stripe.js'
 
 // The paid order of a draft is found via orders.draft_id after the draft credentials were verified.
 // A paid order wins over older failed or pending ones; the status comes only from the webhook-written column.
 const SELECT_DOWNLOAD_ORDER_SQL = `SELECT o.id, o.status, o.package_code, o.amount_cents, o.currency,
-    o.created_at, o.paid_at, o.snapshot_key, o.snapshot_sha256, o.snapshot_size, o.snapshot_content_type
+    o.created_at, o.paid_at, o.snapshot_key, o.snapshot_sha256, o.snapshot_size, o.snapshot_content_type,
+    o.stripe_checkout_session_id, o.customer_email
   FROM orders o WHERE o.draft_id = $1
   ORDER BY (o.status = 'paid') DESC, o.created_at DESC
   LIMIT 1`
@@ -117,22 +119,40 @@ export async function loadPaidSnapshot({ sql = getSql(), storage = { getObject }
 }
 
 /** Loads and renders confirmation data only after draft authorization and payment verification. */
-export async function loadPaidOrderConfirmation({ sql = getSql(), storage = { getObject }, body }) {
+export async function loadPaidOrderConfirmation({
+  sql = getSql(),
+  storage = { getObject },
+  stripe = getStripe(),
+  siteUrl = process.env.SITE_URL,
+  body,
+}) {
   const { order, draft } = await loadOrder(sql, body)
 
   if (!order) throw new DownloadError(404, 'Order not found', 'order_not_found')
   if (order.status !== 'paid') throw new DownloadError(402, 'Payment is not confirmed', 'not_paid')
-  if (![FULFILLMENT_PACKAGE_CODE, BUSINESS_FULFILLMENT_PACKAGE_CODE].includes(order.package_code)) {
+  const managed = [FULFILLMENT_PACKAGE_CODE, BUSINESS_FULFILLMENT_PACKAGE_CODE].includes(order.package_code)
+  if (!getPackage(order.package_code)) {
     throw new DownloadError(404, 'Order not found', 'order_not_found')
   }
 
-  const [fulfillment] = await sql.query(SELECT_PAID_FULFILLMENT_SQL, [order.id])
-  if (!fulfillment) throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
+  let fulfillment = null
+  if (managed) {
+    ;[fulfillment] = await sql.query(SELECT_PAID_FULFILLMENT_SQL, [order.id])
+    if (!fulfillment) throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
+  }
+
+  if (!order.stripe_checkout_session_id) {
+    throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
+  }
+  const session = await stripe.checkout.sessions.retrieve(order.stripe_checkout_session_id)
+  if (session?.id !== order.stripe_checkout_session_id || session.payment_status !== 'paid') {
+    throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
+  }
 
   let artistName = null
   const contentKey = draftContentKeyOf(draft)
 
-  if (contentKey) {
+  if (contentKey && getPackage(order.package_code).builderSlug === 'artist-band') {
     const object = await storage.getObject(contentKey)
     if (object?.contentType === 'application/json') {
       try {
@@ -149,7 +169,7 @@ export async function loadPaidOrderConfirmation({ sql = getSql(), storage = { ge
   const amountCents = Number(order.amount_cents)
   if (!Number.isSafeInteger(amountCents) || amountCents < 0
     || typeof order.currency !== 'string' || !/^[A-Z]{3}$/.test(order.currency)
-    || !order.created_at || !fulfillment.hostinger_consented_at) {
+    || !order.created_at || (managed && !fulfillment.hostinger_consented_at)) {
     throw new DownloadError(409, 'Order confirmation is not available', 'confirmation_unavailable')
   }
 
@@ -158,11 +178,13 @@ export async function loadPaidOrderConfirmation({ sql = getSql(), storage = { ge
     fulfillment,
     amountCents,
     artistName,
+    stripeCustomer: session.customer_details,
+    withdrawalUrl: siteUrl ? new URL('/widerruf', siteUrl).href : '/widerruf',
   })
 
   return {
     body: Buffer.from(pdf),
-    fileName: 'auftragsbestaetigung-rundum-sorglos.pdf',
+    fileName: 'vertragsbestaetigung.pdf',
     size: pdf.byteLength,
   }
 }

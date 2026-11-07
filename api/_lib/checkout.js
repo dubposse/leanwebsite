@@ -4,6 +4,7 @@ import { defaultGenerators, renderWebsite } from './generators.js'
 import { logError } from './diagnostics.js'
 import { HttpError } from './http.js'
 import { CURRENCY, getPackage } from './packages.js'
+import { CHECKOUT_TAX_NOTICE, PACKAGE_COPY } from '../../shared/builder-copy.js'
 import { getObject, orderSnapshotKey, putObject } from './storage.js'
 import { isWellFormedToken } from './tokens.js'
 import {
@@ -293,6 +294,12 @@ async function ensureSession({ sql, stripe, siteUrl, draft, pkg }, order) {
       {
         mode: 'payment',
         locale: 'de',
+        customer_creation: 'always',
+        name_collection: {
+          individual: { enabled: true, optional: false },
+          business: { enabled: true, optional: true },
+        },
+        submit_type: 'pay',
         client_reference_id: order.id,
         line_items: [
           {
@@ -300,7 +307,10 @@ async function ensureSession({ sql, stripe, siteUrl, draft, pkg }, order) {
             price_data: {
               currency: CURRENCY.toLowerCase(),
               unit_amount: pkg.amountCents,
-              product_data: { name: `${draft.builder_name} – ${pkg.name}` },
+              product_data: {
+                name: `${draft.builder_name} – ${PACKAGE_COPY[pkg.code].title}`,
+                description: CHECKOUT_TAX_NOTICE,
+              },
             },
           },
         ],

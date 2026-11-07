@@ -8,6 +8,7 @@ import { defaultGenerators } from '../api/_lib/generators.js'
 import { generateAccessToken } from '../api/_lib/tokens.js'
 import { saveDraftContent } from '../api/_lib/drafts.js'
 import { HOSTINGER_CONSENT_VERSION } from '../api/_lib/fulfillment.js'
+import { PACKAGE_COPY } from '../shared/builder-copy.js'
 import { buildRequest, buildResponse, createFakeDb, createTestGenerators, htmlFor, createFakeStorage, createFakeStripe } from './helpers/fakes.js'
 
 const DRAFT_ID = '33333333-3333-4333-8333-333333333333'
@@ -142,10 +143,18 @@ describe('POST /api/checkout', () => {
 
       const { params, options } = stripe.sessions.get('cs_test_1')
       assert.equal(params.mode, 'payment')
+      assert.equal(params.customer_creation, 'always')
+      assert.deepEqual(params.name_collection, {
+        individual: { enabled: true, optional: false },
+        business: { enabled: true, optional: true },
+      })
+      assert.equal(params.submit_type, 'pay')
       assert.equal(params.client_reference_id, order.id)
       assert.equal(params.line_items[0].price_data.currency, 'eur')
       assert.equal(params.line_items[0].price_data.unit_amount, 3900)
       assert.equal(params.line_items[0].quantity, 1)
+      assert.equal(params.line_items[0].price_data.product_data.name, 'Artist & Band – Code & Go')
+      assert.equal(params.line_items[0].price_data.product_data.description, 'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.')
       assert.equal('automatic_tax' in params, false)
       assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success&builder=artist-band`)
       assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled&builder=artist-band`)
@@ -159,7 +168,9 @@ describe('POST /api/checkout', () => {
         fulfillmentData: fulfillmentData(),
       }))
       assert.equal(db.orders[0].amount_cents, 7900)
-      assert.equal(stripe.sessions.get('cs_test_1').params.line_items[0].price_data.unit_amount, 7900)
+      const product = stripe.sessions.get('cs_test_1').params.line_items[0]
+      assert.equal(product.price_data.unit_amount, 7900)
+      assert.equal(product.price_data.product_data.name, 'Artist & Band – Rundum Sorglos')
     })
 
     it('does not mark anything as paid or lock the draft', async () => {
@@ -406,6 +417,8 @@ describe('POST /api/checkout', () => {
         assert.equal(order.amount_cents, pkg.amountCents)
         const params = stripe.sessions.get(order.stripe_checkout_session_id).params
         assert.equal(params.line_items[0].price_data.unit_amount, pkg.amountCents)
+        assert.equal(params.line_items[0].price_data.product_data.name, `Business – ${PACKAGE_COPY[packageCode].title}`)
+        assert.equal(params.submit_type, 'pay')
         assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success&builder=business`)
         assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled&builder=business`)
         assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, new RegExp(draftToken))

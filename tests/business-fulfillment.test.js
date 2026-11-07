@@ -237,6 +237,6 @@ describe('Business Rundum-Sorglos fulfillment form', () => {
       { builder: 'business', package: 'business-pure-code', ...credentials },
     )
     assert.equal(HOSTINGER_CONSENT_VERSION, 'hostinger-setup-v1')
-    assert.match(HOSTINGER_CONSENT_TEXT, /neue, verfügbare \.de-Domain/)
+    assert.match(HOSTINGER_CONSENT_TEXT, /einmaligen Einrichtung von Hosting und Domain/)
   })
 })
