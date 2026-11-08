@@ -368,6 +368,16 @@ describe('POST /api/checkout', () => {
     const validBusinessData = {
       company: { name: 'Musterbetrieb' },
       contact: { email: 'hallo@example.de' },
+      operator: {
+        operatorName: 'Musterbetrieb',
+        street: 'Musterstraße 1',
+        postalCode: '10115',
+        city: 'Berlin',
+        country: 'Deutschland',
+        email: 'hallo@example.de',
+        confirmPublic: 'true',
+        confirmReviewed: 'true',
+      },
     }
 
     beforeEach(() => {
@@ -429,6 +439,42 @@ describe('POST /api/checkout', () => {
         } else {
           assert.equal(db.fulfillments.has(order.id), false)
         }
+      }
+    })
+
+    it('requires the review confirmation server-side for both packages', async () => {
+      for (const [packageCode, draftId] of [['business-pure-code', BUSINESS_DRAFT_ID], ['business-rundum-sorglos', OTHER_BUSINESS_DRAFT_ID]]) {
+        const draftToken = addBusinessDraft(draftId, { ...validBusinessData, operator: { ...validBusinessData.operator, confirmReviewed: 'false' } })
+        const res = await send({
+          builder: 'business', package: packageCode, draftId, draftToken,
+          ...(packageCode === 'business-rundum-sorglos' && { fulfillmentData: businessFulfillmentData() }),
+        })
+
+        assert.equal(res.statusCode, 422)
+      }
+      assert.equal(db.orders.length, 0)
+      assert.equal(stripe.createCalls, 0)
+    })
+
+    it('snapshots the correct package-specific legal views and keeps the snapshot immutable', async () => {
+      for (const [packageCode, draftId] of [['business-pure-code', BUSINESS_DRAFT_ID], ['business-rundum-sorglos', OTHER_BUSINESS_DRAFT_ID]]) {
+        const draftToken = addBusinessDraft(draftId, { ...validBusinessData, operator: { ...validBusinessData.operator, hostingProvider: 'IONOS', domainProvider: 'STRATO' } })
+        const res = await send({
+          builder: 'business', package: packageCode, draftId, draftToken,
+          ...(packageCode === 'business-rundum-sorglos' && { fulfillmentData: businessFulfillmentData() }),
+        })
+        assert.equal(res.statusCode, 200)
+        const order = db.orders.find((item) => item.draft_id === draftId)
+        const snapshot = storage.objects.get(order.snapshot_key).body
+        const html = snapshot.toString()
+        assert.match(html, /id="impressum" class="legal-view"/)
+        assert.match(html, /id="datenschutz" class="legal-view"/)
+        assert.match(html, /Musterstraße 1/)
+        assert.match(html, packageCode === 'business-pure-code' ? /Hostinganbieter ist IONOS angegeben/ : /Hostinganbieter ist Hostinger vorgesehen/)
+        assert.match(html, packageCode === 'business-pure-code' ? /Domainanbieter ist STRATO angegeben/ : /Domainanbieter ist Hostinger vorgesehen/)
+        storage.objects.set(`drafts/${draftId}/content`, { body: Buffer.from('{}'), contentType: 'application/json' })
+        assert.deepEqual(storage.objects.get(order.snapshot_key).body, snapshot)
+        assert.equal(order.snapshot_sha256, sha256(snapshot))
       }
     })
 

@@ -60,7 +60,7 @@ describe('business mobile view', () => {
     assert.match(builder, /data-view="edit" aria-pressed="true" aria-controls="business-editor"/)
     assert.match(builder, /data-view="preview" aria-pressed="false" aria-controls="business-preview"/)
     assert.match(builder, /setupBusinessMobileView\([\s\S]*?frame\.getBoundingClientRect\(\)\s*renderPreview\(\)/)
-    assert.match(builder, /function renderPreview\(\)\s*\{\s*clearTimeout\(previewTimer\)\s*frame\.srcdoc = generateBusinessHtml\(state, \{ preview: true \}\)/)
+    assert.match(builder, /function renderPreview\(\)\s*\{\s*clearTimeout\(previewTimer\)\s*frame\.srcdoc = generateBusinessHtml\(state, \{ preview: true, packageCode: selectedPackageCode\(\) \}\)/)
     assert.match(builder, /sandbox="allow-scripts allow-popups"/)
   })
 })

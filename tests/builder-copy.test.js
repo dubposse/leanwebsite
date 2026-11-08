@@ -82,9 +82,9 @@ Nach Ablauf der enthaltenen Zeiträume betragen die Verlängerungskosten nach ak
       assert.ok(summary.includes(title.replace('&', '&amp;')))
       assert.ok(summary.includes(price))
       assert.ok(summary.includes(CHECKOUT_TAX_NOTICE))
-      assert.ok(summary.includes('href="https://matthiasbrehm.de/impressum"'))
-      assert.ok(summary.includes('href="/datenschutz"'))
       assert.ok(summary.includes('href="/widerruf"'))
+      assert.ok(!summary.includes('href="https://matthiasbrehm.de/impressum"'))
+      assert.ok(!summary.includes('href="/datenschutz"'))
       assert.equal(
         summary.includes('Kosten und Laufzeiten:'),
         packageCode.endsWith('-rundum-sorglos'),

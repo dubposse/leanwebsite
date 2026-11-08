@@ -1,5 +1,5 @@
 import withdrawalMarkdown from './data/withdrawal-page.md?raw'
-import { renderMarkdown } from './markdown.js'
+import { renderWithdrawalMarkdown } from './withdrawal-markdown.js'
 
 const EMPTY_VALUE = 'Nicht angegeben'
 
@@ -17,7 +17,7 @@ export function renderWithdrawalPage(app) {
       </header>
       <main class="privacy-content">
         <article class="privacy-document">
-          ${renderMarkdown(withdrawalMarkdown)}
+          ${renderWithdrawalMarkdown(withdrawalMarkdown)}
           <section class="withdrawal-action" aria-labelledby="withdrawal-action-title">
             <h2 id="withdrawal-action-title">Elektronischer Widerruf</h2>
             <p>Sie können Ihre Widerrufserklärung hier elektronisch übermitteln.</p>

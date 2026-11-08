@@ -6,6 +6,8 @@ import {
   HOSTINGER_CONSENT_VERSION,
   packageRequiresFulfillment,
   validateArtistBandFulfillment,
+  validateArtistBandFulfillmentForUI,
+  ArtistBandFulfillmentValidationError,
 } from '../src/artist-band-fulfillment.js'
 
 const validData = (overrides = {}) => ({
@@ -112,5 +114,33 @@ describe('Artist & Band fulfillment UI data', () => {
       HOSTINGER_CONSENT_TEXT,
       'Ich beauftrage LeanWebsite Studio mit der beschriebenen einmaligen Einrichtung von Hosting und Domain sowie der Veröffentlichung meiner Website. Ich habe die Informationen zu Folgekosten und Übergabe zur Kenntnis genommen.',
     )
+  })
+
+  it('collects multiple validation errors in validateArtistBandFulfillmentForUI', () => {
+    const errors = validateArtistBandFulfillmentForUI({
+      firstName: '',
+      lastName: '',
+      billingStreet: 'Street',
+      billingPostalCode: '',
+      billingCity: 'City',
+      billingCountryCode: '',
+      communicationEmail: 'invalid-email',
+      desiredDomain: 'invalid-domain',
+      alternativeDomain: '',
+      domainHolderDiffers: false,
+      hostingerConsent: false,
+    })
+
+    assert.ok(errors.length > 1, 'Should collect multiple errors, not just the first')
+    assert.ok(errors.every((e) => e instanceof ArtistBandFulfillmentValidationError), 'All errors should be ArtistBandFulfillmentValidationError')
+
+    const errorFields = errors.map((e) => e.field)
+    assert.ok(errorFields.includes('firstName'), 'Should include firstName error')
+    assert.ok(errorFields.includes('lastName'), 'Should include lastName error')
+    assert.ok(errorFields.includes('billingPostalCode'), 'Should include billingPostalCode error')
+    assert.ok(errorFields.includes('billingCountryCode'), 'Should include billingCountryCode error')
+    assert.ok(errorFields.includes('communicationEmail'), 'Should include communicationEmail error')
+    assert.ok(errorFields.includes('desiredDomain'), 'Should include desiredDomain error')
+    assert.ok(errorFields.includes('hostingerConsent'), 'Should include hostingerConsent error')
   })
 })

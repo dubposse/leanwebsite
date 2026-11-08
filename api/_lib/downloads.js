@@ -182,9 +182,16 @@ export async function loadPaidOrderConfirmation({
     withdrawalUrl: siteUrl ? new URL('/widerruf', siteUrl).href : '/widerruf',
   })
 
+  const fileNameMap = {
+    'artist-band-code-and-go': 'vertragsbestaetigung-artist-code-and-go.pdf',
+    'artist-band-rundum-sorglos': 'vertragsbestaetigung-artist-rundum-sorglos.pdf',
+    'business-pure-code': 'vertragsbestaetigung-business-pure-code.pdf',
+    'business-rundum-sorglos': 'vertragsbestaetigung-business-rundum-sorglos.pdf',
+  }
+
   return {
     body: Buffer.from(pdf),
-    fileName: 'vertragsbestaetigung.pdf',
+    fileName: fileNameMap[order.package_code] || 'vertragsbestaetigung.pdf',
     size: pdf.byteLength,
   }
 }

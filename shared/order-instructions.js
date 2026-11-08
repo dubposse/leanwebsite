@@ -1,0 +1,1 @@
+export const MANAGED_FILE_DELIVERY_NOTICE = 'Bitte sende uns nach dem Download deine website.html zusammen mit der PDF-Vertragsbestätigung per E-Mail an kontakt@matthiasbrehm.de. Wir benötigen beide Dateien, um deine Website einzurichten und zu veröffentlichen.'

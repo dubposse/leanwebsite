@@ -8,6 +8,7 @@ import {
 } from '../shared/builder-copy.js'
 import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
+import { artistBandLegalErrors, LEGAL_DEFAULTS } from '../shared/artist-band-legal.js'
 import { setupArtistBandMobileView } from './artist-band-mobile-view.js'
 import {
   collectArtistBandFulfillment,
@@ -15,6 +16,8 @@ import {
   HOSTINGER_CONSENT_TEXT,
   HOSTINGER_CONSENT_VERSION,
   packageRequiresFulfillment,
+  validateArtistBandFulfillmentForUI,
+  ArtistBandFulfillmentValidationError,
 } from './artist-band-fulfillment.js'
 
 const STORAGE_KEY = 'leanwebsite-artist-band-draft-v1'
@@ -36,17 +39,20 @@ const DEFAULT_DATA = {
   email: '',
   cover: '',
   tracks: [{ a: 'Midnight Acid', b: '' }],
+  gigsHeading: 'Live',
   gigs: [{ a: '2026-11-21', b: 'Berlin · Club Posse' }],
+  legal: { ...LEGAL_DEFAULTS },
 }
 
 const FIELD_NAMES = [
   'name', 'genre', 'tagline', 'bio', 'accent', 'theme', 'contentFont', 'contentColor',
-  'spotify', 'soundcloud', 'bandcamp', 'instagram', 'email',
+  'spotify', 'soundcloud', 'bandcamp', 'instagram', 'email', 'gigsHeading',
 ]
 
 function cloneData(data) {
   return {
     ...data,
+    legal: { ...LEGAL_DEFAULTS, ...data.legal },
     tracks: data.tracks.map((track) => ({ ...track })),
     gigs: data.gigs.map((gig) => ({ ...gig })),
   }
@@ -223,7 +229,7 @@ export function renderArtistBandBuilder(app) {
                 <section class="ab-card">
                   <div class="ab-card-heading"><span>02</span><div><h2>Releases &amp; Live</h2><p>Füge Songs und kommende Termine hinzu.</p></div></div>
                   <div class="ab-list-section"><div class="ab-list-title"><h3>Tracks</h3><button class="ab-add" id="ab-add-track" type="button">+ Track hinzufügen</button></div><div id="ab-tracks" class="ab-list"></div></div>
-                  <div class="ab-list-section"><div class="ab-list-title"><h3>Gigs</h3><button class="ab-add" id="ab-add-gig" type="button">+ Gig hinzufügen</button></div><div id="ab-gigs" class="ab-list"></div></div>
+                  <div class="ab-list-section"><div class="ab-list-title"><h3>Gigs</h3><button class="ab-add" id="ab-add-gig" type="button">+ Gig hinzufügen</button></div><div class="ab-fields-grid"><label class="ab-field ab-field-wide">Überschrift für Gigs<input name="gigsHeading" maxlength="40"></label><div id="ab-gigs" class="ab-list ab-field-wide"></div></div></div>
                 </section>
 
                 <section class="ab-card">
@@ -235,6 +241,36 @@ export function renderArtistBandBuilder(app) {
                     <label class="ab-field">Instagram<input name="instagram" type="url" maxlength="2048" placeholder="https://"></label>
                     <label class="ab-field ab-field-wide">Booking-E-Mail<input name="email" type="email" maxlength="254" autocomplete="email"></label>
                   </div>
+                </section>
+                <section class="ab-card" id="ab-legal">
+                  <div class="ab-card-heading"><div><h2>Impressum &amp; Datenschutz</h2></div></div>
+                  <div class="ab-fields-grid">
+                    <label class="ab-field">Betreiberform<select name="legalOperatorType" data-legal="operatorType"><option value="person">Einzelperson</option><option value="gbr">GbR</option><option value="association">Verein</option><option value="company">Unternehmen (z. B. UG oder GmbH)</option></select></label>
+                    <label class="ab-field">Name des Betreibers<input name="legalOperatorName" data-legal="operatorName" maxlength="500"></label>
+                    <label class="ab-field" data-legal-company>Rechtsform (z. B. UG oder GmbH)<input name="legalForm" data-legal="legalForm" maxlength="500"></label>
+                    <label class="ab-field ab-field-wide" data-legal-representative>Vertretungsberechtigte<input name="legalRepresentative" data-legal="representative" maxlength="500"></label>
+                    <p class="ab-field-hint ab-field-wide">Diese Anschrift wird öffentlich im Impressum deiner Website angezeigt. Verwende eine geeignete, ladungsfähige Anschrift.</p>
+                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="legalStreet" data-legal="street" maxlength="500"></label>
+                    <label class="ab-field">Postleitzahl<input name="legalPostalCode" data-legal="postalCode" maxlength="500"></label>
+                    <label class="ab-field">Ort<input name="legalCity" data-legal="city" maxlength="500"></label>
+                    <label class="ab-field">Land<input name="legalCountry" data-legal="country" maxlength="500"></label>
+                    <label class="ab-field">Öffentliche E-Mail-Adresse<input name="legalEmail" data-legal="email" type="email" maxlength="500"></label>
+                    <label class="ab-field">Telefonnummer (optional)<input name="legalPhone" data-legal="phone" maxlength="500"></label>
+                    <label class="ab-field">Registereintragung<select name="legalRegistered" data-legal="registered"><option value="false">Nein</option><option value="true">Ja</option></select></label>
+                    <label class="ab-field" data-legal-register>Registergericht<input name="legalRegisterCourt" data-legal="registerCourt" maxlength="500"></label>
+                    <label class="ab-field" data-legal-register>Registernummer<input name="legalRegisterNumber" data-legal="registerNumber" maxlength="500"></label>
+                    <label class="ab-field">Umsatzsteuer-ID (falls vorhanden und anzugeben)<input name="legalVatId" data-legal="vatId" maxlength="500"></label>
+                    <label class="ab-field">Journalistisch-redaktionelle Inhalte<select name="legalEditorial" data-legal="editorial"><option value="false">Nein</option><option value="true">Ja</option></select></label>
+                    <label class="ab-field" data-legal-editorial>Name des Verantwortlichen<input name="legalEditorialName" data-legal="editorialName" maxlength="500"></label>
+                    <label class="ab-field" data-legal-editorial>Anschrift des Verantwortlichen<input name="legalEditorialAddress" data-legal="editorialAddress" maxlength="500"></label>
+                    <label class="ab-field" data-legal-code>Hostinganbieter<select name="legalHostingProvider" data-legal="hostingProvider"><option value="">Noch nicht entschieden</option><option>Hostinger</option><option>IONOS</option><option>STRATO</option><option value="other">Anderer Anbieter</option></select></label>
+                    <label class="ab-field" data-legal-hosting-other>Anderer Hostinganbieter<input name="legalHostingOther" data-legal="hostingOther" maxlength="500"></label>
+                    <label class="ab-field" data-legal-code>Domainanbieter<select name="legalDomainProvider" data-legal="domainProvider"><option value="">Noch nicht entschieden</option><option>Hostinger</option><option>IONOS</option><option>STRATO</option><option value="other">Anderer Anbieter</option></select></label>
+                    <label class="ab-field" data-legal-domain-other>Anderer Domainanbieter<input name="legalDomainOther" data-legal="domainOther" maxlength="500"></label>
+                    <label class="ab-consent ab-field-wide"><input name="legalConfirmPublic" data-legal="confirmPublic" type="checkbox"><span>Ich bestätige, dass die Betreiberangaben korrekt sind und öffentlich auf meiner Website angezeigt werden dürfen.</span></label>
+                    <label class="ab-consent ab-field-wide"><input name="legalConfirmReviewed" data-legal="confirmReviewed" type="checkbox"><span>Ich habe Impressum und Datenschutzerklärung geprüft und werde die Angaben bei Bedarf vor der Veröffentlichung anpassen.</span></label>
+                  </div>
+                  <p id="ab-legal-error" class="ab-fulfillment-error" role="alert" hidden></p>
                 </section>
               </fieldset>
             </form>
@@ -256,17 +292,17 @@ export function renderArtistBandBuilder(app) {
                   </div>
                   <p class="ab-artist-context">Website-Name aus deinem Entwurf: <strong id="ab-artist-name"></strong>. Das ist nicht dein rechtlicher Name als Auftraggeber.</p>
                   <div class="ab-fields-grid">
-                    <label class="ab-field">Vorname<input name="firstName" maxlength="100" autocomplete="given-name" required></label>
-                    <label class="ab-field">Nachname<input name="lastName" maxlength="100" autocomplete="family-name" required></label>
-                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="billingStreet" maxlength="200" autocomplete="street-address" required></label>
-                    <label class="ab-field">Postleitzahl<input name="billingPostalCode" maxlength="20" autocomplete="postal-code" required></label>
-                    <label class="ab-field">Ort<input name="billingCity" maxlength="100" autocomplete="address-level2" required></label>
-                    <label class="ab-field">Land (Ländercode)<input name="billingCountryCode" maxlength="2" placeholder="DE" autocomplete="country" required></label>
-                    <label class="ab-field ab-field-wide">E-Mail für die Auftragskommunikation<input name="communicationEmail" type="email" maxlength="254" autocomplete="off" required></label>
-                    <label class="ab-field">Gewünschte neue .de-Domain<input name="desiredDomain" maxlength="253" placeholder="dein-name.de" autocapitalize="none" spellcheck="false" required></label>
-                    <label class="ab-field">Alternative .de-Domain (optional)<input name="alternativeDomain" maxlength="253" placeholder="dein-name-2.de" autocapitalize="none" spellcheck="false"></label>
+                    <label class="ab-field">Vorname<input name="firstName" maxlength="100" autocomplete="given-name" required aria-invalid="false"></label>
+                    <label class="ab-field">Nachname<input name="lastName" maxlength="100" autocomplete="family-name" required aria-invalid="false"></label>
+                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="billingStreet" maxlength="200" autocomplete="street-address" required aria-invalid="false"></label>
+                    <label class="ab-field">Postleitzahl<input name="billingPostalCode" maxlength="20" autocomplete="postal-code" required aria-invalid="false"></label>
+                    <label class="ab-field">Ort<input name="billingCity" maxlength="100" autocomplete="address-level2" required aria-invalid="false"></label>
+                    <label class="ab-field">Land (Ländercode)<input name="billingCountryCode" maxlength="2" placeholder="DE" autocomplete="country" required aria-invalid="false"></label>
+                    <label class="ab-field ab-field-wide">E-Mail für die Auftragskommunikation<input name="communicationEmail" type="email" maxlength="254" autocomplete="off" required aria-invalid="false"></label>
+                    <label class="ab-field">Gewünschte neue .de-Domain<input name="desiredDomain" maxlength="253" placeholder="dein-name.de" autocapitalize="none" spellcheck="false" required aria-invalid="false"></label>
+                    <label class="ab-field">Alternative .de-Domain (optional)<input name="alternativeDomain" maxlength="253" placeholder="dein-name-2.de" autocapitalize="none" spellcheck="false" aria-invalid="false"></label>
                     <label class="ab-field ab-field-wide">Domaininhaber
-                      <select name="domainHolderDiffers">
+                      <select name="domainHolderDiffers" aria-invalid="false">
                         <option value="false">Der Domaininhaber entspricht dem Auftraggeber.</option>
                         <option value="true">Der Domaininhaber ist eine andere Person.</option>
                       </select>
@@ -274,20 +310,20 @@ export function renderArtistBandBuilder(app) {
                   </div>
                   <div id="ab-domain-holder-fields" class="ab-fields-grid ab-domain-holder-fields" hidden>
                     <h4 class="ab-field-wide">Angaben zum abweichenden Domaininhaber</h4>
-                    <label class="ab-field">Vorname<input name="domainHolderFirstName" maxlength="100" autocomplete="off"></label>
-                    <label class="ab-field">Nachname<input name="domainHolderLastName" maxlength="100" autocomplete="off"></label>
-                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="domainHolderStreet" maxlength="200" autocomplete="off"></label>
-                    <label class="ab-field">Postleitzahl<input name="domainHolderPostalCode" maxlength="20" autocomplete="off"></label>
-                    <label class="ab-field">Ort<input name="domainHolderCity" maxlength="100" autocomplete="off"></label>
-                    <label class="ab-field">Land (Ländercode)<input name="domainHolderCountryCode" maxlength="2" placeholder="DE" autocomplete="off"></label>
-                    <label class="ab-field">E-Mail-Adresse<input name="domainHolderEmail" type="email" maxlength="254" autocomplete="off"></label>
+                    <label class="ab-field">Vorname<input name="domainHolderFirstName" maxlength="100" autocomplete="off" aria-invalid="false"></label>
+                    <label class="ab-field">Nachname<input name="domainHolderLastName" maxlength="100" autocomplete="off" aria-invalid="false"></label>
+                    <label class="ab-field ab-field-wide">Straße und Hausnummer<input name="domainHolderStreet" maxlength="200" autocomplete="off" aria-invalid="false"></label>
+                    <label class="ab-field">Postleitzahl<input name="domainHolderPostalCode" maxlength="20" autocomplete="off" aria-invalid="false"></label>
+                    <label class="ab-field">Ort<input name="domainHolderCity" maxlength="100" autocomplete="off" aria-invalid="false"></label>
+                    <label class="ab-field">Land (Ländercode)<input name="domainHolderCountryCode" maxlength="2" placeholder="DE" autocomplete="off" aria-invalid="false"></label>
+                    <label class="ab-field">E-Mail-Adresse<input name="domainHolderEmail" type="email" maxlength="254" autocomplete="off" aria-invalid="false"></label>
                   </div>
                   <section class="ab-hostinger-notes" aria-labelledby="ab-hostinger-title">
                     <h4 id="ab-hostinger-title">Hosting und Domain – Rundum Sorglos</h4>
                     <p>${HOSTING_DOMAIN_DETAILS}</p>
                   </section>
                   <label class="ab-consent" data-consent-version="${HOSTINGER_CONSENT_VERSION}">
-                    <input name="hostingerConsent" type="checkbox" required>
+                    <input name="hostingerConsent" type="checkbox" required aria-invalid="false">
                     <span>${HOSTINGER_CONSENT_TEXT}</span>
                   </label>
                   <p id="ab-fulfillment-error" class="ab-fulfillment-error" role="alert" hidden></p>
@@ -349,6 +385,9 @@ export function renderArtistBandBuilder(app) {
   const domainHolderFields = app.querySelector('#ab-domain-holder-fields')
   const artistName = app.querySelector('#ab-artist-name')
   const fulfillmentError = app.querySelector('#ab-fulfillment-error')
+  const legalSection = app.querySelector('#ab-legal')
+  const legalError = app.querySelector('#ab-legal-error')
+  let legalValidationStarted = false
   const coverInput = app.querySelector('#ab-cover')
   const coverName = app.querySelector('#ab-cover-name')
   const coverPreviewWrap = app.querySelector('#ab-cover-preview-wrap')
@@ -389,6 +428,30 @@ export function renderArtistBandBuilder(app) {
     fulfillmentError.hidden = !message
   }
 
+  function showFulfillmentErrors(errors) {
+    if (!errors || errors.length === 0) {
+      showFulfillmentError('')
+      for (const field of fulfillmentForm.querySelectorAll('[aria-invalid="true"]')) {
+        field.setAttribute('aria-invalid', 'false')
+      }
+      return
+    }
+
+    const errorFields = new Set(errors.map((e) => e.field))
+    for (const field of fulfillmentForm.querySelectorAll('[aria-invalid]')) {
+      field.setAttribute('aria-invalid', errorFields.has(field.name) ? 'true' : 'false')
+    }
+
+    const firstError = errors[0]
+    showFulfillmentError(firstError.message)
+
+    const firstErrorField = fulfillmentForm.elements[firstError.field]
+    if (firstErrorField) {
+      firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      firstErrorField.focus()
+    }
+  }
+
   function updateDomainHolderFields() {
     const differs = fulfillmentForm.elements.domainHolderDiffers.value === 'true'
     domainHolderFields.hidden = !differs
@@ -403,6 +466,41 @@ export function renderArtistBandBuilder(app) {
     checkoutReview.hidden = true
     checkoutButton.hidden = false
     if (!showFulfillment) showFulfillmentError('')
+    updateLegalFields()
+    updatePreview()
+  }
+
+  function updateLegalFields() {
+    const code = !packageRequiresFulfillment(packageBox.querySelector('input[name="package"]:checked')?.value)
+    for (const [selector, visible] of [
+      ['[data-legal-representative]', data.legal.operatorType !== 'person'],
+      ['[data-legal-company]', data.legal.operatorType === 'company'],
+      ['[data-legal-register]', data.legal.registered],
+      ['[data-legal-editorial]', data.legal.editorial],
+      ['[data-legal-code]', code],
+      ['[data-legal-hosting-other]', code && data.legal.hostingProvider === 'other'],
+      ['[data-legal-domain-other]', code && data.legal.domainProvider === 'other'],
+    ]) {
+      legalSection.querySelectorAll(selector).forEach((element) => { element.hidden = !visible })
+    }
+    if (legalValidationStarted) showLegalErrors(false)
+  }
+
+  function showLegalErrors(navigate) {
+    const packageCode = packageBox.querySelector('input[name="package"]:checked')?.value
+    const errors = artistBandLegalErrors(data.legal, packageCode)
+    const names = new Set(errors.map((error) => error.field))
+    for (const field of legalSection.querySelectorAll('[data-legal]')) {
+      field.setAttribute('aria-invalid', String(names.has(field.dataset.legal)))
+    }
+    legalError.textContent = errors[0]?.message ?? ''
+    legalError.hidden = !errors.length
+    if (navigate && errors.length) {
+      const field = legalSection.querySelector(`[data-legal="${errors[0].field}"]`)
+      field.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      field.focus({ preventScroll: true })
+    }
+    return errors.length === 0
   }
 
   function restoreFulfillmentData(value) {
@@ -447,7 +545,8 @@ export function renderArtistBandBuilder(app) {
   function updatePreview() {
     clearTimeout(previewTimer)
     previewTimer = setTimeout(() => {
-      preview.srcdoc = generateArtistBandHtml(data, new Date().getFullYear())
+      preview.srcdoc = generateArtistBandHtml(data, new Date().getFullYear(), undefined, packageBox.querySelector('input[name="package"]:checked')?.value)
+        .replace('<head>', '<head><base href="about:srcdoc">')
     }, 100)
   }
 
@@ -503,6 +602,12 @@ export function renderArtistBandBuilder(app) {
     for (const key of FIELD_NAMES) {
       form.elements[key].value = data[key] ?? DEFAULT_DATA[key]
     }
+    for (const field of legalSection.querySelectorAll('[data-legal]')) {
+      const value = data.legal[field.dataset.legal]
+      if (field.type === 'checkbox') field.checked = value
+      else field.value = String(value)
+    }
+    updateLegalFields()
     artistName.textContent = data.name
     renderList('tracks')
     renderList('gigs')
@@ -618,6 +723,7 @@ export function renderArtistBandBuilder(app) {
           ...loaded.data,
           contentFont: loaded.data.contentFont ?? DEFAULT_DATA.contentFont,
           contentColor: loaded.data.contentColor ?? DEFAULT_DATA.contentColor,
+          gigsHeading: loaded.data.gigsHeading?.trim() ? loaded.data.gigsHeading : DEFAULT_DATA.gigsHeading,
         })
         revision = 0
         savedRevision = 0
@@ -651,6 +757,13 @@ export function renderArtistBandBuilder(app) {
   }
 
   form.addEventListener('input', (event) => {
+    const legalKey = event.target.dataset.legal
+    if (legalKey && event.target.tagName !== 'SELECT') {
+      data.legal[legalKey] = event.target.type === 'checkbox' ? event.target.checked : event.target.value
+      updateLegalFields()
+      markChanged()
+      return
+    }
     const key = event.target.name
     if (!FIELD_NAMES.includes(key) || event.target.tagName === 'SELECT') return
     data[key] = event.target.value
@@ -658,6 +771,13 @@ export function renderArtistBandBuilder(app) {
   })
 
   form.addEventListener('change', (event) => {
+    const legalKey = event.target.dataset.legal
+    if (legalKey && event.target.tagName === 'SELECT') {
+      data.legal[legalKey] = ['registered', 'editorial'].includes(legalKey) ? event.target.value === 'true' : event.target.value
+      updateLegalFields()
+      markChanged()
+      return
+    }
     const key = event.target.name
     if (event.target.tagName !== 'SELECT' || !FIELD_NAMES.includes(key) || data[key] === event.target.value) return
     data[key] = event.target.value
@@ -668,10 +788,22 @@ export function renderArtistBandBuilder(app) {
 
   packageBox.addEventListener('change', updateSelectedPackage)
   fulfillmentForm.addEventListener('change', (event) => {
-    if (event.target.name === 'domainHolderDiffers') updateDomainHolderFields()
+    if (event.target.name === 'domainHolderDiffers') {
+      updateDomainHolderFields()
+      if (event.target.getAttribute('aria-invalid') === 'true') {
+        event.target.setAttribute('aria-invalid', 'false')
+      }
+    }
     showFulfillmentError('')
   })
-  fulfillmentForm.addEventListener('input', () => showFulfillmentError(''))
+  fulfillmentForm.addEventListener('input', (event) => {
+    if (event.target.form === fulfillmentForm) {
+      const field = event.target
+      if (field.getAttribute('aria-invalid') === 'true') {
+        field.setAttribute('aria-invalid', 'false')
+      }
+    }
+  })
 
   app.querySelector('#ab-add-track').addEventListener('click', () => {
     if (data.tracks.length >= 20) {
@@ -733,8 +865,39 @@ export function renderArtistBandBuilder(app) {
       return
     }
 
+    legalValidationStarted = true
+    if (!showLegalErrors(true)) return
+
     try {
-      if (packageRequiresFulfillment(selectedPackage)) collectArtistBandFulfillment(fulfillmentForm)
+      if (packageRequiresFulfillment(selectedPackage)) {
+        const formData = {
+          firstName: fulfillmentForm.elements.firstName.value,
+          lastName: fulfillmentForm.elements.lastName.value,
+          billingStreet: fulfillmentForm.elements.billingStreet.value,
+          billingPostalCode: fulfillmentForm.elements.billingPostalCode.value,
+          billingCity: fulfillmentForm.elements.billingCity.value,
+          billingCountryCode: fulfillmentForm.elements.billingCountryCode.value,
+          communicationEmail: fulfillmentForm.elements.communicationEmail.value,
+          desiredDomain: fulfillmentForm.elements.desiredDomain.value,
+          alternativeDomain: fulfillmentForm.elements.alternativeDomain.value,
+          domainHolderDiffers: fulfillmentForm.elements.domainHolderDiffers.value === 'true',
+          domainHolderFirstName: fulfillmentForm.elements.domainHolderFirstName.value,
+          domainHolderLastName: fulfillmentForm.elements.domainHolderLastName.value,
+          domainHolderStreet: fulfillmentForm.elements.domainHolderStreet.value,
+          domainHolderPostalCode: fulfillmentForm.elements.domainHolderPostalCode.value,
+          domainHolderCity: fulfillmentForm.elements.domainHolderCity.value,
+          domainHolderCountryCode: fulfillmentForm.elements.domainHolderCountryCode.value,
+          domainHolderEmail: fulfillmentForm.elements.domainHolderEmail.value,
+          hostingerConsent: fulfillmentForm.elements.hostingerConsent.checked,
+        }
+        const errors = validateArtistBandFulfillmentForUI(formData)
+        if (errors.length > 0) {
+          showFulfillmentErrors(errors)
+          setStatus('')
+          return
+        }
+        collectArtistBandFulfillment(fulfillmentForm)
+      }
       checkoutReviewContent.innerHTML = renderCheckoutReview({
         packageCode: selectedPackage,
         builderLabel: 'Artist & Band',

@@ -623,6 +623,61 @@ h2 {
   text-underline-offset: 3px;
 }
 
+.withdrawal-page .privacy-document {
+  width: min(100%, 740px);
+}
+
+.withdrawal-page .privacy-document > p:not(:first-of-type),
+.withdrawal-page .privacy-section p {
+  margin: 0 0 18px;
+  color: #46534b;
+  font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.withdrawal-page .privacy-section {
+  margin-top: 40px;
+  padding-top: 28px;
+}
+
+.withdrawal-page .privacy-section h2 {
+  margin-bottom: 18px;
+  font-size: clamp(20px, 3vw, 23px);
+}
+
+.withdrawal-page .privacy-document .withdrawal-contact-address,
+.withdrawal-page .privacy-document .withdrawal-contact-details {
+  margin: 0;
+  border: 1px solid var(--line);
+  padding: 18px 20px;
+  background: #f3f6f0;
+}
+
+.withdrawal-page .privacy-document .withdrawal-contact-address {
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  padding-bottom: 8px;
+}
+
+.withdrawal-page .privacy-document .withdrawal-contact-details {
+  margin-bottom: 18px;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  padding-top: 8px;
+}
+
+.withdrawal-page .privacy-section .withdrawal-contact-address {
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 10px;
+  padding-bottom: 18px;
+}
+
+.withdrawal-page #legal-section-1 {
+  border-top: 2px solid #b8c99a;
+}
+
 .withdrawal-action {
   margin-top: 40px;
   border: 1px solid var(--line);
@@ -961,8 +1016,18 @@ h2 {
   .privacy-footer-links {
     width: 100%;
     justify-content: flex-start;
-    gap: 16px;
-    font-size: 11px;
+    flex-wrap: wrap;
+    gap: 0 18px;
+    font-size: 13px;
+  }
+
+  .site-footer-links a,
+  .privacy-footer-links a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
 
   .privacy-content {
@@ -1224,6 +1289,22 @@ h2 {
 .ab-list-row input:focus {
   border-color: #9cbe57;
   box-shadow: 0 0 0 3px rgba(200, 241, 105, 0.1);
+}
+
+.ab-field input[aria-invalid='true'],
+.ab-field textarea[aria-invalid='true'],
+.ab-field select[aria-invalid='true'] {
+  border-color: #f8b4b4;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.16);
+}
+
+#ab-legal [hidden] {
+  display: none;
+}
+
+#ab-legal .ab-consent input[aria-invalid='true'] {
+  outline: 2px solid #f8b4b4;
+  outline-offset: 3px;
 }
 
 .ab-field input[type='color'] {
@@ -1794,6 +1875,36 @@ h2 {
     padding: 36px 0 40px;
   }
 
+  .ab-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+    padding-block: 16px;
+  }
+
+  .ab-footer-links,
+  .ab-checkout-review .checkout-review-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 18px;
+  }
+
+  .ab-footer a,
+  .ab-checkout-review .checkout-review-links a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .ab-footer > a {
+    align-self: stretch;
+    border-top: 1px solid var(--ab-line);
+    margin-top: 4px;
+    padding-top: 8px;
+  }
+
   .ab-workspace {
     grid-template-columns: 1fr;
   }
@@ -1956,8 +2067,7 @@ h2 {
   .ab-hostinger-notes,
   .ab-consent,
   .ab-status,
-  .ab-privacy-note,
-  .ab-footer-links {
+  .ab-privacy-note {
     overflow-wrap: anywhere;
   }
 

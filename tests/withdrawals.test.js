@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { createWithdrawalsHandler, validateWithdrawalInput } from '../api/withdrawals.js'
+import { renderWithdrawalMarkdown } from '../src/withdrawal-markdown.js'
 import { buildRequest, buildResponse } from './helpers/fakes.js'
 
 const ID = 'd83a4cb2-4c0c-4a60-b952-cb2519598aa2'
@@ -124,6 +125,17 @@ describe('withdrawal page and persistence migration', () => {
   const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const artistBuilder = readFileSync(new URL('../src/artist-band-builder.js', import.meta.url), 'utf8')
   const businessBuilder = readFileSync(new URL('../src/business-builder.js', import.meta.url), 'utf8')
+
+  it('renders both contact addresses as readable, non-clickable text with separate lines', () => {
+    const html = renderWithdrawalMarkdown(markdown)
+    assert.equal((html.match(/kontakt@matthiasbrehm\.de/g) || []).length, 2)
+    assert.doesNotMatch(html, /mailto:|<a\b|<button\b/i)
+    assert.match(html, /class="withdrawal-contact-address">Matthias Brehm<br>Nordwestring 89<br>90419 Nürnberg<br>Deutschland<\/p>/)
+    assert.match(html, /class="withdrawal-contact-details">Telefon: \+49 177 873 5761<br>E-Mail: kontakt@matthiasbrehm\.de<\/p>/)
+    assert.match(html, /id="legal-section-3"><h2>Muster-Widerrufsformular<\/h2>/)
+    assert.match(html, /class="withdrawal-contact-address">Matthias Brehm<br>Nordwestring 89<br>90419 Nürnberg<br>E-Mail: kontakt@matthiasbrehm\.de<\/p>/)
+    assert.doesNotMatch(page, /mailto:|location\.href|window\.open/i)
+  })
 
   it('includes the required wording and two-stage confirmation with actual response time', () => {
     assert.match(markdown, /\*\*Widerrufsrecht für Verbraucher\*\*/)

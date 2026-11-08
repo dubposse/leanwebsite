@@ -379,6 +379,22 @@
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.16);
 }
 
+#app.business-builder #business-operator [hidden] {
+  display: none;
+}
+
+#app.business-builder .step .business-operator-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+#app.business-builder .step .business-operator-confirm input {
+  width: auto;
+  flex: none;
+  margin: 3px 0 0;
+}
+
 #app.business-builder .business-purchase {
   margin-top: 24px;
   border-top: 1px solid var(--border);
@@ -1008,8 +1024,24 @@
 
 @media (max-width: 480px) {
   #app.business-builder .business-privacy-links {
-    gap: 12px;
-    font-size: 0.72rem;
+    gap: 0 18px;
+    justify-content: flex-start;
+    font-size: 0.85rem;
+  }
+
+  #app.business-builder .business-privacy-links a,
+  #app.business-builder .business-checkout-review .checkout-review-links a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  #app.business-builder .business-checkout-review .checkout-review-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 18px;
   }
 
   #app.business-builder .business-page {

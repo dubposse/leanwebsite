@@ -122,7 +122,7 @@ describe('business website navigation', () => {
   it('generates internal links with corresponding targets and no mail navigation', () => {
     const html = generateBusinessHtml(businessData())
     const links = fragmentLinks(html)
-    assert.deepEqual(links, ['#top', '#leistungen', '#ueber-uns', '#galerie', '#kontakt', '#kontakt', '#impressum'])
+    assert.deepEqual(links, ['#top', '#top', '#top', '#leistungen', '#ueber-uns', '#galerie', '#kontakt', '#kontakt', '#impressum', '#datenschutz'])
     for (const fragment of links) {
       assert.match(html, new RegExp(`\\bid="${fragment.slice(1)}"`))
     }
@@ -146,7 +146,7 @@ describe('business website navigation', () => {
     const builder = await readFile(new URL('../src/business-builder.js', import.meta.url), 'utf8')
     const assignments = [...builder.matchAll(/frame\.srcdoc\s*=\s*([^;\n]+)/g)].map((match) => match[1].trim())
     assert.deepEqual(assignments, [
-      'generateBusinessHtml(state, { preview: true })',
+      'generateBusinessHtml(state, { preview: true, packageCode: selectedPackageCode() })',
     ])
     assert.match(builder, /function renderState\(\)[\s\S]*?renderPreview\(\)/)
     assert.match(builder, /function updatePreview\(\)[\s\S]*?setTimeout\(renderPreview, 300\)/)

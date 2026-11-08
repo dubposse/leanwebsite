@@ -1,4 +1,5 @@
 import { generateBusinessHtml } from '../shared/business-template.js'
+import { businessOperatorErrors, BUSINESS_OPERATOR_CHOICES, BUSINESS_OPERATOR_DEFAULTS, BUSINESS_OPERATOR_LIMITS } from '../shared/business-operator.js'
 import {
   HOSTING_DOMAIN_DETAILS,
   PACKAGE_COPY,
@@ -11,11 +12,13 @@ import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { setupBusinessMobileView } from './business-mobile-view.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
+  BusinessFulfillmentValidationError,
   collectBusinessFulfillment,
   createBusinessCheckoutPayload,
   HOSTINGER_CONSENT_TEXT,
   resetBusinessFulfillment,
   restoreBusinessFulfillment,
+  validateBusinessFulfillmentForUI,
 } from './business-fulfillment.js'
 import './business-builder.css'
 
@@ -51,6 +54,7 @@ const FIELD_LIMITS = {
   'legal.vat': 32,
   'legal.domain': 253,
   'legal.notes': 5000,
+  ...Object.fromEntries(Object.entries(BUSINESS_OPERATOR_LIMITS).map(([field, limit]) => [`operator.${field}`, limit])),
 }
 
 const INVALID_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
@@ -66,6 +70,7 @@ const DEFAULT_DATA = {
   contact: { email: '', phone: '', address: '', hours: '', instagram: '' },
   design: { accent: '#8b5cf6', accent2: '#22d3ee', mode: 'dark', radius: '16' },
   legal: { owner: '', vat: '', domain: '', notes: '' },
+  operator: { ...BUSINESS_OPERATOR_DEFAULTS },
 }
 
 const PALETTES = [
@@ -89,6 +94,7 @@ const SECTION_FIELDS = {
   contact: ['email', 'phone', 'address', 'hours', 'instagram'],
   design: ['accent', 'accent2', 'mode', 'radius'],
   legal: ['owner', 'vat', 'domain', 'notes'],
+  operator: Object.keys(BUSINESS_OPERATOR_DEFAULTS),
 }
 
 function isImageDataUrl(value) {
@@ -121,6 +127,9 @@ function isBusinessDataStructure(value, { serverData = false } = {}) {
     if (!isObject(data) || Object.keys(data).some((field) => !fields.includes(field))) return false
     for (const [field, fieldValue] of Object.entries(data)) {
       if (typeof fieldValue !== 'string') return false
+      if (section === 'operator' && (fieldValue.length > BUSINESS_OPERATOR_LIMITS[field]
+        || INVALID_CONTROL_CHARACTERS.test(fieldValue)
+        || (Object.hasOwn(BUSINESS_OPERATOR_CHOICES, field) && !BUSINESS_OPERATOR_CHOICES[field].includes(fieldValue)))) return false
       if (field === 'image' && !isImageDataUrl(fieldValue)) return false
     }
   }
@@ -260,6 +269,7 @@ function normalizeState(value) {
     contact: mergeSection(DEFAULT_DATA.contact, saved.contact),
     design: mergeSection(DEFAULT_DATA.design, saved.design),
     legal: mergeSection(DEFAULT_DATA.legal, saved.legal),
+    operator: mergeSection(DEFAULT_DATA.operator, saved.operator),
   }
 
   for (const path of ['hero.image', 'about.image']) {
@@ -388,6 +398,7 @@ function validationWarnings(data) {
     about: data.about,
     contact: data.contact,
     legal: data.legal,
+    operator: data.operator,
   })) {
     for (const [field, value] of Object.entries(entries)) {
       if (field === 'image') continue
@@ -563,6 +574,39 @@ export function renderBusinessBuilder(app) {
               <label>USt-IdNr. (falls vorhanden)<input data-bind="legal.vat" maxlength="32" placeholder="DE123456789"></label>
               <label>Eure Domain (bleibt bestehen)<input data-bind="legal.domain" maxlength="253" placeholder="www.eure-firma.de"></label>
               <label>Wünsche &amp; Anmerkungen für mich<textarea rows="3" maxlength="5000" data-bind="legal.notes" placeholder="Z. B. Newsletter, Shop, Mehrsprachigkeit …"></textarea></label>
+              <section id="business-operator" aria-labelledby="business-operator-title">
+                <h3 id="business-operator-title">Impressum &amp; Datenschutz</h3>
+                <p class="hint">Angaben zum rechtlich verantwortlichen Betreiber deiner Website, unabhängig von Rechnungsadresse und Domaininhaber.</p>
+                <label>Betreiberform<select data-bind="operator.operatorType"><option value="person">Einzelperson</option><option value="gbr">GbR</option><option value="association">Verein</option><option value="company">Unternehmen</option></select></label>
+                <label>Name des rechtlich verantwortlichen Betreibers<input data-bind="operator.operatorName"></label>
+                <label data-operator-company>Rechtsform<input data-bind="operator.legalForm" placeholder="z. B. UG oder GmbH"></label>
+                <label data-operator-representative>Vertretungsberechtigte Personen<input data-bind="operator.representative" placeholder="Namen der vertretungsberechtigten Personen"></label>
+                <p class="hint">Diese Anschrift wird öffentlich im Impressum deiner Website angezeigt. Verwende eine geeignete, ladungsfähige Anschrift.</p>
+                <label>Straße und Hausnummer<input data-bind="operator.street"></label>
+                <div class="row"><label>Postleitzahl<input data-bind="operator.postalCode"></label><label>Ort<input data-bind="operator.city"></label></div>
+                <label>Land<input data-bind="operator.country"></label>
+                <label>Öffentliche E-Mail-Adresse<input data-bind="operator.email" type="text" inputmode="email"></label>
+                <label>Telefonnummer (optional)<input data-bind="operator.phone"></label>
+                <label>Registereintragung vorhanden<select data-bind="operator.registered"><option value="false">Nein</option><option value="true">Ja</option></select></label>
+                <div data-operator-register>
+                  <label>Registergericht<input data-bind="operator.registerCourt"></label>
+                  <label>Registernummer<input data-bind="operator.registerNumber"></label>
+                </div>
+                <label>Umsatzsteuer-ID (falls vorhanden)<input data-bind="operator.vatId"></label>
+                <label>Journalistisch-redaktionelle Inhalte<select data-bind="operator.editorial"><option value="false">Nein</option><option value="true">Ja</option></select></label>
+                <div data-operator-editorial>
+                  <label>Name der verantwortlichen Person<input data-bind="operator.editorialName"></label>
+                  <label>Anschrift der verantwortlichen Person<input data-bind="operator.editorialAddress"></label>
+                </div>
+                <label data-operator-code>Hostinganbieter<select data-bind="operator.hostingProvider"><option value="">Noch nicht entschieden</option><option>Hostinger</option><option>IONOS</option><option>STRATO</option><option value="other">Anderer Anbieter</option></select></label>
+                <label data-operator-hosting-other>Anderer Hostinganbieter<input data-bind="operator.hostingOther"></label>
+                <label data-operator-code>Domainanbieter<select data-bind="operator.domainProvider"><option value="">Noch nicht entschieden</option><option>Hostinger</option><option>IONOS</option><option>STRATO</option><option value="other">Anderer Anbieter</option></select></label>
+                <label data-operator-domain-other>Anderer Domainanbieter<input data-bind="operator.domainOther"></label>
+                <p data-operator-managed class="hint">Bei Rundum Sorglos ist Hostinger als Anbieter vorgesehen.</p>
+                <label class="business-operator-confirm"><input type="checkbox" data-bind="operator.confirmPublic"><span>Ich bestätige, dass die Betreiberangaben korrekt sind und öffentlich auf meiner Website angezeigt werden dürfen.</span></label>
+                <label class="business-operator-confirm"><input type="checkbox" data-bind="operator.confirmReviewed"><span>Ich habe Impressum und Datenschutzerklärung geprüft und werde die Angaben bei Bedarf vor der Veröffentlichung anpassen.</span></label>
+                <p class="hint">Prüfe Impressum und Datenschutzerklärung über die Links in der Live-Vorschau.</p>
+              </section>
               <div class="finish">
                 <p class="hint">Deine Eingaben bleiben lokal gesichert. Mit „Serverentwurf speichern“ werden sie online gespeichert; weitere Änderungen werden danach automatisch übernommen.</p>
               </div>
@@ -772,6 +816,7 @@ export function renderBusinessBuilder(app) {
   let toastTimer
   let autoSaveTimer
   let checkoutPending = false
+  let operatorValidationStarted = false
   const imageTasks = new Set()
   let storageWarningShown = false
   let preservedDataWarningShown = false
@@ -852,6 +897,7 @@ export function renderBusinessBuilder(app) {
   function setCheckoutStatus(message, kind = '') {
     checkoutStatus.textContent = message
     checkoutStatus.dataset.state = kind
+    delete checkoutStatus.dataset.source
   }
 
   function selectedPackageCode() {
@@ -862,6 +908,46 @@ export function renderBusinessBuilder(app) {
     const visible = selectedPackageCode() === BUSINESS_FULFILLMENT_PACKAGE_CODE
     fulfillmentForm.hidden = !visible
     fulfillmentFields.disabled = !visible || checkoutPending || referenceError || !draftReconciled || serverStatus === 'locked' || localDataInvalid
+    updateOperatorVisibility()
+  }
+
+  function updateOperatorVisibility(revalidate = false) {
+    const operator = state.operator
+    const code = selectedPackageCode() === 'business-pure-code'
+    for (const [selector, visible] of [
+      ['[data-operator-company]', operator.operatorType === 'company'],
+      ['[data-operator-representative]', operator.operatorType !== 'person'],
+      ['[data-operator-register]', operator.registered === 'true'],
+      ['[data-operator-editorial]', operator.editorial === 'true'],
+      ['[data-operator-code]', code],
+      ['[data-operator-hosting-other]', code && operator.hostingProvider === 'other'],
+      ['[data-operator-domain-other]', code && operator.domainProvider === 'other'],
+      ['[data-operator-managed]', !code],
+    ]) $$(selector, $('#business-operator')).forEach((element) => { element.hidden = !visible })
+    if (operatorValidationStarted && revalidate) showOperatorErrors(false)
+  }
+
+  function showOperatorErrors(focus) {
+    const errors = businessOperatorErrors(state.operator, selectedPackageCode())
+    const names = new Set(errors.map((error) => error.field))
+    for (const field of $$('[data-bind^="operator."]', $('#business-operator'))) {
+      field.setAttribute('aria-invalid', String(names.has(field.dataset.bind.slice('operator.'.length))))
+    }
+    if (errors.length) {
+      setCheckoutStatus(errors[0].message, 'error')
+      checkoutStatus.dataset.source = 'operator'
+      if (focus) {
+        const field = $(`[data-bind="operator.${errors[0].field}"]`)
+        const stepIndex = stepElements.indexOf(field.closest('.step'))
+        if (stepIndex >= 0 && stepIndex !== currentStep) go(stepIndex)
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        field.focus({ preventScroll: true })
+      }
+    } else if (operatorValidationStarted && checkoutStatus.dataset.state === 'error'
+      && checkoutStatus.dataset.source === 'operator') {
+      setCheckoutStatus('')
+    }
+    return errors.length === 0
   }
 
   function clearFulfillmentErrors() {
@@ -869,13 +955,30 @@ export function renderBusinessBuilder(app) {
     if (checkoutStatus.dataset.state === 'error') setCheckoutStatus('')
   }
 
-  function showFulfillmentError(error, { focus = true } = {}) {
+  function showFulfillmentErrors(errors, { focus = true } = {}) {
     clearFulfillmentErrors()
-    setCheckoutStatus(error.message, 'error')
-    const field = fulfillmentForm.elements[error.field]
-    if (!field) return
-    field.setAttribute('aria-invalid', 'true')
-    if (focus) field.focus()
+    if (errors.length === 0) return
+
+    let firstErrorField = null
+    for (const error of errors) {
+      const field = fulfillmentForm.elements[error.field]
+      if (field) {
+        field.setAttribute('aria-invalid', 'true')
+        if (!firstErrorField) firstErrorField = field
+      }
+    }
+
+    const firstError = errors[0]
+    setCheckoutStatus(firstError.message, 'error')
+
+    if (focus && firstErrorField) {
+      firstErrorField.focus()
+      firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+
+  function showFulfillmentError(error, { focus = true } = {}) {
+    showFulfillmentErrors([error], { focus })
   }
 
   function updateCustomerTypeFields({ clear = true } = {}) {
@@ -964,7 +1067,8 @@ export function renderBusinessBuilder(app) {
     const step = field.closest('.step')
     const stepIndex = stepElements.indexOf(step)
     if (stepIndex >= 0) go(stepIndex)
-    field.setAttribute('aria-invalid', 'true')
+    $('[data-bind="company.name"]').setAttribute('aria-invalid', String(!state.company.name.trim()))
+    $('[data-bind="contact.email"]').setAttribute('aria-invalid', String(!state.contact.email.trim() || !isValidEmail(state.contact.email)))
     field.focus()
     setCheckoutStatus(message, 'error')
   }
@@ -972,12 +1076,12 @@ export function renderBusinessBuilder(app) {
   function clearPurchaseError(element) {
     if (!element.matches('[data-bind="company.name"], [data-bind="contact.email"]')) return
     const error = validatePurchase()
-    for (const selector of ['[data-bind="company.name"]', '[data-bind="contact.email"]']) {
-      $(selector).removeAttribute('aria-invalid')
-    }
+    $('[data-bind="company.name"]').setAttribute('aria-invalid', String(!state.company.name.trim()))
+    $('[data-bind="contact.email"]').setAttribute('aria-invalid', String(!state.contact.email.trim() || !isValidEmail(state.contact.email)))
     if (error) {
-      $(`[data-bind="${error.path}"]`).setAttribute('aria-invalid', 'true')
       setCheckoutStatus(error.message, 'error')
+    } else if (operatorValidationStarted) {
+      showOperatorErrors(false)
     } else {
       setCheckoutStatus('')
     }
@@ -1337,7 +1441,7 @@ export function renderBusinessBuilder(app) {
 
   function renderPreview() {
     clearTimeout(previewTimer)
-    frame.srcdoc = generateBusinessHtml(state, { preview: true })
+    frame.srcdoc = generateBusinessHtml(state, { preview: true, packageCode: selectedPackageCode() })
   }
 
   function updatePreview() {
@@ -1660,13 +1764,15 @@ export function renderBusinessBuilder(app) {
       if (max) element.maxLength = max
       else element.removeAttribute('maxlength')
       if (max) element.title = `Maximal ${max} Zeichen.`
-      element.value = getValue(path) ?? ''
+      if (element.type === 'checkbox') element.checked = getValue(path) === 'true'
+      else element.value = getValue(path) ?? ''
       element.oninput = () => {
         const previous = getValue(path)
+        const value = element.type === 'checkbox' ? String(element.checked) : element.value
         if (
           max
-          && element.value.length > max
-          && (previous.length <= max || element.value.length >= previous.length)
+          && value.length > max
+          && (previous.length <= max || value.length >= previous.length)
         ) {
           element.value = previous
           toast(`Dieses Feld darf höchstens ${max} Zeichen enthalten.`)
@@ -1677,8 +1783,9 @@ export function renderBusinessBuilder(app) {
           toast('Dieses Feld enthält nicht erlaubte Steuerzeichen.')
           return
         }
-        setValue(path, element.value)
+        setValue(path, value)
         clearPurchaseError(element)
+        if (path.startsWith('operator.')) updateOperatorVisibility(true)
         changed()
       }
       element.onblur = () => {
@@ -1695,6 +1802,7 @@ export function renderBusinessBuilder(app) {
         }
       }
     })
+    updateOperatorVisibility()
   }
 
   PALETTES.forEach(([accent, accent2]) => {
@@ -1766,6 +1874,8 @@ export function renderBusinessBuilder(app) {
     checkoutReview.hidden = true
     checkoutButton.hidden = false
     updateFulfillmentVisibility()
+    updatePreview()
+    if (operatorValidationStarted) showOperatorErrors(false)
   })
   fulfillmentForm.elements.customerType.addEventListener('change', () => {
     updateCustomerTypeFields()
@@ -1782,6 +1892,34 @@ export function renderBusinessBuilder(app) {
   fulfillmentForm.addEventListener('input', clearFulfillmentErrors)
   fulfillmentForm.addEventListener('change', clearFulfillmentErrors)
 
+  function getFulfillmentErrors() {
+    const value = (name) => fulfillmentForm.elements[name].value
+    return validateBusinessFulfillmentForUI({
+      customerType: value('customerType'),
+      companyName: value('companyName'),
+      firstName: value('firstName'),
+      lastName: value('lastName'),
+      billingStreet: value('billingStreet'),
+      billingPostalCode: value('billingPostalCode'),
+      billingCity: value('billingCity'),
+      billingCountryCode: value('billingCountryCode'),
+      communicationEmail: value('communicationEmail'),
+      desiredDomain: value('desiredDomain'),
+      alternativeDomain: value('alternativeDomain'),
+      domainHolderDiffers: value('domainHolderDiffers') === 'true',
+      domainHolderType: value('domainHolderType'),
+      domainHolderOrganizationName: value('domainHolderOrganizationName'),
+      domainHolderFirstName: value('domainHolderFirstName'),
+      domainHolderLastName: value('domainHolderLastName'),
+      domainHolderStreet: value('domainHolderStreet'),
+      domainHolderPostalCode: value('domainHolderPostalCode'),
+      domainHolderCity: value('domainHolderCity'),
+      domainHolderCountryCode: value('domainHolderCountryCode'),
+      domainHolderEmail: value('domainHolderEmail'),
+      hostingerConsent: fulfillmentForm.elements.hostingerConsent.checked,
+    })
+  }
+
   function showCheckoutReview() {
     if (checkoutPending) return
 
@@ -1791,14 +1929,29 @@ export function renderBusinessBuilder(app) {
       return
     }
 
+    const fulfillmentErrors = selectedPackage === BUSINESS_FULFILLMENT_PACKAGE_CODE ? getFulfillmentErrors() : []
+    showFulfillmentErrors(fulfillmentErrors, { focus: false })
+    operatorValidationStarted = true
+    const operatorValid = showOperatorErrors(false)
     const purchaseError = validatePurchase()
     if (purchaseError) {
       showPurchaseError(purchaseError)
       return
     }
 
+    if (!operatorValid) {
+      showOperatorErrors(true)
+      return
+    }
+    if (fulfillmentErrors.length) {
+      showFulfillmentErrors(fulfillmentErrors)
+      return
+    }
+
     try {
-      if (selectedPackage === BUSINESS_FULFILLMENT_PACKAGE_CODE) collectBusinessFulfillment(fulfillmentForm)
+      if (selectedPackage === BUSINESS_FULFILLMENT_PACKAGE_CODE) {
+        collectBusinessFulfillment(fulfillmentForm)
+      }
       checkoutReviewContent.innerHTML = renderCheckoutReview({
         packageCode: selectedPackage,
         builderLabel: 'Business',
@@ -1830,6 +1983,8 @@ export function renderBusinessBuilder(app) {
       showPurchaseError(purchaseError)
       return
     }
+    operatorValidationStarted = true
+    if (!showOperatorErrors(true)) return
 
     let orderData = null
     if (selectedPackage === BUSINESS_FULFILLMENT_PACKAGE_CODE) {
@@ -1854,6 +2009,9 @@ export function renderBusinessBuilder(app) {
       if (currentError) {
         showPurchaseError(currentError)
         throw new Error(currentError.message)
+      }
+      if (!showOperatorErrors(false)) {
+        throw new Error('Bitte prüfe die Betreiberangaben.')
       }
 
       while (savedRevision < revision) await saveLatest()

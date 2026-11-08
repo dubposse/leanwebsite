@@ -14,7 +14,7 @@ Nordwestring 89
 Deutschland
 
 Telefon: +49 177 873 5761
-E-Mail: [kontakt@matthiasbrehm.de](mailto:kontakt@matthiasbrehm.de)
+E-Mail: kontakt@matthiasbrehm.de
 
 mittels einer eindeutigen Erklärung, beispielsweise per Brief oder E-Mail, über Ihren Entschluss informieren, den Vertrag zu widerrufen.
 
@@ -46,7 +46,7 @@ An:
 Matthias Brehm
 Nordwestring 89
 90419 Nürnberg
-E-Mail: [kontakt@matthiasbrehm.de](mailto:kontakt@matthiasbrehm.de)
+E-Mail: kontakt@matthiasbrehm.de
 
 Hiermit widerrufe(n) ich/wir den von mir/uns abgeschlossenen Vertrag über die Bereitstellung digitaler Website-Inhalte beziehungsweise die beauftragte Website-Dienstleistung.
 

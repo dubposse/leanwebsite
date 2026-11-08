@@ -18,10 +18,18 @@ describe('privacy policy page', () => {
     assert.equal(sections.length, 19)
     assert.match(policy, /^# Datenschutzerklärung – LeanWebsite Studio$/m)
     assert.match(policy, /^\*\*Stand: 7\. November 2026\*\*$/m)
-    assert.match(policy, /\[kontakt@matthiasbrehm\.de\]\(mailto:kontakt@matthiasbrehm\.de\)/)
+    assert.equal((policy.match(/kontakt@matthiasbrehm\.de/g) || []).length, 2)
     assert.match(policy, /\[https:\/\/matthiasbrehm\.de\]\(https:\/\/matthiasbrehm\.de\)/)
     assert.match(policy, /§ 25 Abs\. 2 TDDDG/)
     assert.match(policy, /Bayerische Landesamt für Datenschutzaufsicht/)
+  })
+
+  it('renders both contact email addresses as plain text without affecting other links', () => {
+    const html = renderMarkdown(policy)
+    assert.equal((html.match(/kontakt@matthiasbrehm\.de/g) || []).length, 2)
+    assert.doesNotMatch(html, /mailto:|<a\b[^>]*>[^<]*kontakt@matthiasbrehm\.de/i)
+    assert.match(html, /<a href="https:\/\/matthiasbrehm\.de"/)
+    assert.doesNotMatch(page, /mailto:|window\.open/i)
   })
 
   it('routes /datenschutz and makes it available in Vercel previews', () => {

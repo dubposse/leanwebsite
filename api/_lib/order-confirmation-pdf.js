@@ -3,6 +3,8 @@ import { BUSINESS_FULFILLMENT_PACKAGE_CODE, FULFILLMENT_PACKAGE_CODE } from './f
 import { getPackage } from './packages.js'
 import { CHECKOUT_TAX_NOTICE, HOSTING_DOMAIN_DETAILS, PACKAGE_COPY } from '../../shared/builder-copy.js'
 import { WITHDRAWAL_NOTICE } from '../../shared/withdrawal-copy.js'
+import { MANAGED_FILE_DELIVERY_NOTICE } from '../../shared/order-instructions.js'
+import { getPdfServices } from './pdf-services.js'
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
@@ -26,39 +28,46 @@ function formatDate(value) {
 }
 
 function wrapText(text, font, fontSize, maxWidth) {
-  const words = String(text).replace(/\s+/gu, ' ').trim().split(' ')
-  const lines = []
-  let line = ''
+  // Split by explicit newlines first, then wrap each line separately
+  const paragraphs = String(text).split(/\r?\n/)
+  const allLines = []
 
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word
-    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
-      line = candidate
-      continue
-    }
+  for (const paragraph of paragraphs) {
+    const words = paragraph.replace(/\s+/gu, ' ').trim().split(' ')
+    const lines = []
+    let line = ''
 
-    if (line) lines.push(line)
-    if (font.widthOfTextAtSize(word, fontSize) <= maxWidth) {
-      line = word
-      continue
-    }
-
-    line = ''
-    let fragment = ''
-    for (const character of word) {
-      const next = fragment + character
-      if (fragment && font.widthOfTextAtSize(next, fontSize) > maxWidth) {
-        lines.push(fragment)
-        fragment = character
-      } else {
-        fragment = next
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word
+      if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+        line = candidate
+        continue
       }
+
+      if (line) lines.push(line)
+      if (font.widthOfTextAtSize(word, fontSize) <= maxWidth) {
+        line = word
+        continue
+      }
+
+      line = ''
+      let fragment = ''
+      for (const character of word) {
+        const next = fragment + character
+        if (fragment && font.widthOfTextAtSize(next, fontSize) > maxWidth) {
+          lines.push(fragment)
+          fragment = character
+        } else {
+          fragment = next
+        }
+      }
+      line = fragment
     }
-    line = fragment
+    if (line) lines.push(line)
+    allLines.push(...lines)
   }
 
-  if (line) lines.push(line)
-  return lines.length ? lines : ['-']
+  return allLines.length ? allLines : ['-']
 }
 
 function field(label, value) {
@@ -169,16 +178,21 @@ export async function createOrderConfirmationPdf({
     }] : []),
     {
       title: 'Vereinbarte Leistungen',
-      entries: [
-        { type: 'paragraph', value: copy.description },
-        ...(copy.included ?? []).map((value) => ({ type: 'bullet', value })),
-        ...(copy.excluded ?? []).map((value) => ({ type: 'bullet', value: `Nicht enthalten: ${value}` })),
-      ],
+      entries: (() => {
+        const pdfServices = getPdfServices(order.package_code)
+        const included = pdfServices?.included ?? copy.included ?? []
+        const excluded = pdfServices?.excluded ?? copy.excluded ?? []
+        return [
+          ...included.map((value) => ({ type: 'bullet', value })),
+          ...excluded.map((value) => ({ type: 'bullet', value: `Nicht enthalten: ${value}` })),
+        ]
+      })(),
     },
     ...(isManaged ? [
       {
         title: 'Hosting und Domain – Rundum Sorglos',
         entries: [
+          { type: 'paragraph', value: MANAGED_FILE_DELIVERY_NOTICE },
           { type: 'paragraph', value: HOSTING_DOMAIN_DETAILS },
           field('Gewünschte neue .de-Domain', fulfillment.desired_domain),
           ...(fulfillment.alternative_domain
@@ -329,7 +343,13 @@ export async function createOrderConfirmationPdf({
   const prepared = sections.map((section) => prepareSection(section, CONTENT_WIDTH, regular, bold))
   addPage()
 
-  for (const section of prepared) {
+  // Identify withdrawal section
+  const withdrawalIndex = prepared.findIndex((s) => s.title === 'Widerrufsbelehrung')
+  const regularSections = withdrawalIndex >= 0 ? prepared.slice(0, withdrawalIndex) : prepared
+  const withdrawalSections = withdrawalIndex >= 0 ? prepared.slice(withdrawalIndex) : []
+
+  // Render regular sections
+  for (const section of regularSections) {
     if (y + 24 > CONTENT_BOTTOM) addPage(true)
     drawSectionHeading(section.title, MARGIN, CONTENT_WIDTH)
 
@@ -342,6 +362,25 @@ export async function createOrderConfirmationPdf({
       drawEntry(entry, MARGIN, CONTENT_WIDTH)
     }
     y += 5
+  }
+
+  // Withdrawal always starts on new page
+  if (withdrawalSections.length > 0) {
+    addPage(true)
+    for (const section of withdrawalSections) {
+      if (y + 24 > CONTENT_BOTTOM) addPage(true)
+      drawSectionHeading(section.title, MARGIN, CONTENT_WIDTH)
+
+      for (const entry of section.entries) {
+        const heightNeeded = entryHeight(entry)
+        if (y + heightNeeded > CONTENT_BOTTOM && y > CONTENT_TOP + 24) {
+          addPage(true)
+          drawSectionHeading(`${section.title} – Fortsetzung`, MARGIN, CONTENT_WIDTH)
+        }
+        drawEntry(entry, MARGIN, CONTENT_WIDTH)
+      }
+      y += 5
+    }
   }
 
   pages.forEach((currentPage, index) => {

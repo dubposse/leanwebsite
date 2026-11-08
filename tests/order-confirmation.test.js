@@ -6,6 +6,7 @@ import { PDFDocument } from 'pdf-lib'
 import { createOrderConfirmationPdf } from '../api/_lib/order-confirmation-pdf.js'
 import { createOrderConfirmationHandler } from '../api/orders/confirmation.js'
 import { WITHDRAWAL_NOTICE } from '../shared/withdrawal-copy.js'
+import { MANAGED_FILE_DELIVERY_NOTICE } from '../shared/order-instructions.js'
 import { generateAccessToken } from '../api/_lib/tokens.js'
 import { buildRequest, buildResponse, createFakeDb, createFakeStorage } from './helpers/fakes.js'
 
@@ -110,6 +111,55 @@ describe('POST /api/orders/confirmation', () => {
     }
   })
 
+  it('keeps withdrawal email readable without PDF annotations for all four packages', async () => {
+    for (const [packageCode, details] of [
+      ['artist-band-code-and-go', null],
+      ['artist-band-rundum-sorglos', fulfillment],
+      ['business-pure-code', null],
+      ['business-rundum-sorglos', businessFulfillment],
+    ]) {
+      const bytes = Buffer.from(await createOrderConfirmationPdf({
+        order: paidOrder({ package_code: packageCode }),
+        fulfillment: details,
+        amountCents: 7900,
+        withdrawalUrl: 'https://leanwebsite.example/widerruf',
+      }))
+      const pdf = await PDFDocument.load(bytes)
+      const content = decodedText(bytes)
+      const notice = content.slice(content.indexOf('Widerrufsbelehrung'))
+      assert.ok((notice.match(/kontakt@matthiasbrehm\.de/g) || []).length >= 2, `${packageCode}: readable withdrawal addresses`)
+      for (const page of pdf.getPages()) {
+        const annotations = page.node.Annots()
+        assert.ok(!annotations || annotations.size() === 0, `${packageCode}: no annotations`)
+      }
+      assert.doesNotMatch(content, /mailto:/i)
+    }
+  })
+
+  it('includes the file delivery notice only in managed PDFs without adding pages', async () => {
+    const basicFulfillment = {
+      ...fulfillment,
+      domain_holder_differs: false,
+      alternative_domain: null,
+    }
+    for (const [packageCode, managed, pages] of [
+      ['artist-band-code-and-go', false, 2],
+      ['artist-band-rundum-sorglos', true, 3],
+      ['business-pure-code', false, 2],
+      ['business-rundum-sorglos', true, 3],
+    ]) {
+      const bytes = Buffer.from(await createOrderConfirmationPdf({
+        order: paidOrder({ package_code: packageCode }),
+        fulfillment: managed ? basicFulfillment : null,
+        amountCents: 7900,
+        withdrawalUrl: 'https://leanwebsite.example/widerruf',
+      }))
+      const content = decodedText(bytes)
+      assert.equal(content.includes(MANAGED_FILE_DELIVERY_NOTICE), managed, packageCode)
+      assert.equal((await PDFDocument.load(bytes)).getPageCount(), pages, packageCode)
+    }
+  })
+
   beforeEach(() => {
     db = createFakeDb()
     storage = createFakeStorage()
@@ -156,7 +206,7 @@ describe('POST /api/orders/confirmation', () => {
 
     assert.equal(response.statusCode, 200)
     assert.equal(response.headers['Content-Type'], 'application/pdf')
-    assert.match(response.headers['Content-Disposition'], /attachment; filename="vertragsbestaetigung\.pdf"/)
+    assert.match(response.headers['Content-Disposition'], /attachment; filename="vertragsbestaetigung-artist-rundum-sorglos\.pdf"/)
     assert.equal(response.headers['Cache-Control'], 'private, no-store, max-age=0')
     assert.equal(response.headers.Pragma, 'no-cache')
     assert.equal(response.headers.Expires, '0')
@@ -182,7 +232,12 @@ describe('POST /api/orders/confirmation', () => {
       'Bezahlt',
       'hostinger-setup-v1',
       '25. Oktober 2026',
-      'Einrichtung deines Hostings',
+      'Responsive Website mit modernem Design',
+      'Einmaliges Hosting-Setup bei Hostinger',
+      'Registrierung einer verfügbaren .de-Domain',
+      'Veröffentlichung der Website',
+      'Erster Hostingmonat',
+      'Erstes Domainjahr',
       'Der erste Hostingmonat und das erste Jahr deiner .de-Domain',
       'monatlicher Vertragslaufzeit eingerichtet',
       '9,51',

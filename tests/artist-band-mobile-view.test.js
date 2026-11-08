@@ -89,7 +89,9 @@ describe('artist and band mobile view', () => {
 
   it('keeps state changes connected to the existing shared preview renderer', async () => {
     const builder = await readFile(new URL('../src/artist-band-builder.js', import.meta.url), 'utf8')
-    assert.match(builder, /preview\.srcdoc = generateArtistBandHtml\(data, new Date\(\)\.getFullYear\(\)\)/)
+    assert.match(builder, /preview\.srcdoc = generateArtistBandHtml\(data, new Date\(\)\.getFullYear\(\), undefined,/)
+    assert.match(builder, /\.replace\('<head>', '<head><base href="about:srcdoc">'\)/)
+    assert.match(builder, /<iframe id="ab-preview"[^>]*sandbox=""/)
     assert.match(builder, /function markChanged\(\)[\s\S]*?updatePreview\(\)/)
     assert.match(builder, /data\[key\] = event\.target\.value\s*markChanged\(\)/)
     assert.match(builder, /data-view="edit" aria-pressed="true" aria-controls="ab-editor"/)

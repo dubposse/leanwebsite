@@ -6,8 +6,6 @@ import {
 } from './builder-copy.js'
 
 const LEGAL_LINKS = [
-  ['Impressum', 'https://matthiasbrehm.de/impressum'],
-  ['Datenschutz', '/datenschutz'],
   ['Widerrufsbelehrung', '/widerruf'],
 ]
 

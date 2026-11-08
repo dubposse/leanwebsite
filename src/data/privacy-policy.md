@@ -9,7 +9,7 @@ Nordwestring 89
 90419 Nürnberg
 Deutschland
 
-E-Mail: [kontakt@matthiasbrehm.de](mailto:kontakt@matthiasbrehm.de)
+E-Mail: kontakt@matthiasbrehm.de
 Telefon: +49 177 873 5761
 
 Website: [https://matthiasbrehm.de](https://matthiasbrehm.de)
@@ -238,7 +238,7 @@ Soweit eine Verarbeitung auf einer Einwilligung beruht, kann diese jederzeit mit
 
 Zur Ausübung dieser Rechte genügt eine Nachricht an:
 
-[kontakt@matthiasbrehm.de](mailto:kontakt@matthiasbrehm.de)
+kontakt@matthiasbrehm.de
 
 Darüber hinaus besteht das Recht, sich bei einer zuständigen Datenschutzaufsichtsbehörde zu beschweren.
 

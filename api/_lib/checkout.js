@@ -173,7 +173,7 @@ function orderCompleteUrl(siteUrl, checkout, builderSlug) {
 // The purchasable content: the website HTML generated on the server from the validated draft data. The draft
 // is read once; validation, generation and hashing all work on that single copy, so a concurrent save cannot
 // slip in between. Browser-supplied HTML is never used.
-async function readDraftContent({ storage, draft, generators, year }) {
+async function readDraftContent({ storage, draft, generators, year, pkg }) {
   const key = draftContentKeyOf(draft)
 
   if (!key) throw new CheckoutError(409, 'This draft has no saved content yet')
@@ -191,7 +191,13 @@ async function readDraftContent({ storage, draft, generators, year }) {
     throw new CheckoutError(409, 'The saved draft content is invalid')
   }
 
-  const html = renderWebsite(generators, draft.builder_slug, object.body, year)
+  const html = renderWebsite(generators, draft.builder_slug, object.body, year, pkg.code)
+
+  if (draft.builder_slug === 'artist-band' && generators['artist-band'].validateForCheckout) {
+    if (generators['artist-band'].validateForCheckout(data, pkg.code).length) {
+      throw new CheckoutError(422, 'Bitte prüfe die Angaben zu Impressum und Datenschutz.')
+    }
+  }
 
   if (draft.builder_slug === 'business') {
     if (!data.company?.name?.trim()) {
@@ -199,6 +205,9 @@ async function readDraftContent({ storage, draft, generators, year }) {
     }
     if (!data.contact?.email?.trim()) {
       throw new CheckoutError(422, 'Business contact email is required')
+    }
+    if (generators.business.validateForCheckout?.(data, pkg.code).length) {
+      throw new CheckoutError(422, 'Bitte prüfe die Betreiberangaben zu Impressum und Datenschutz.')
     }
   }
 
@@ -360,7 +369,7 @@ export async function createCheckoutSession({
     throw new CheckoutError(400, 'Fulfillment data is only accepted for Rundum-Sorglos orders')
   }
   const fulfillmentData = requiresFulfillment ? validateFulfillmentData(request.fulfillmentData, pkg.code) : null
-  const content = await readDraftContent({ storage, draft, generators, year })
+  const content = await readDraftContent({ storage, draft, generators, year, pkg })
   const context = { sql, stripe, siteUrl, draft, pkg, storage, content }
 
   // Several attempts: a concurrent request may win the unique "one pending order per draft" index,

@@ -218,3 +218,130 @@ export function resetBusinessFulfillment(form) {
     form.elements[field].value = ''
   }
 }
+
+export function validateBusinessFulfillmentForUI(data) {
+  const errors = []
+
+  const tryValidate = (fn) => {
+    try {
+      fn()
+    } catch (error) {
+      if (error instanceof BusinessFulfillmentValidationError) {
+        errors.push(error)
+      }
+    }
+  }
+
+  tryValidate(() => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new BusinessFulfillmentValidationError('customerType', 'Bitte prüfe die Auftragsangaben.')
+    }
+    if (data.customerType !== 'company' && data.customerType !== 'self_employed') {
+      throw new BusinessFulfillmentValidationError('customerType', 'Bitte wähle Unternehmen oder selbstständige Person.')
+    }
+  })
+
+  const isCompany = data?.customerType === 'company'
+  if (isCompany) {
+    tryValidate(() => {
+      requiredText(data.companyName, 'companyName', 'den Firmennamen', 200)
+    })
+  }
+
+  tryValidate(() => {
+    requiredText(data.firstName, 'firstName', 'den Vornamen', 100)
+  })
+
+  tryValidate(() => {
+    requiredText(data.lastName, 'lastName', 'den Nachnamen', 100)
+  })
+
+  tryValidate(() => {
+    requiredText(data.billingStreet, 'billingStreet', 'Straße und Hausnummer', 200)
+  })
+
+  tryValidate(() => {
+    requiredText(data.billingPostalCode, 'billingPostalCode', 'die Postleitzahl', 20)
+  })
+
+  tryValidate(() => {
+    requiredText(data.billingCity, 'billingCity', 'den Ort', 100)
+  })
+
+  tryValidate(() => {
+    countryCode(data.billingCountryCode, 'billingCountryCode', 'das Rechnungsland')
+  })
+
+  tryValidate(() => {
+    emailAddress(data.communicationEmail, 'communicationEmail', 'die Auftragskommunikation')
+  })
+
+  tryValidate(() => {
+    domain(data.desiredDomain, 'desiredDomain', 'Die gewünschte Domain')
+  })
+
+  tryValidate(() => {
+    const desiredDomain = domain(data.desiredDomain, 'desiredDomain', 'Die gewünschte Domain')
+    const alternativeDomain = domain(data.alternativeDomain, 'alternativeDomain', 'Die alternative Domain', { optional: true })
+    if (alternativeDomain === desiredDomain) {
+      throw new BusinessFulfillmentValidationError('alternativeDomain', 'Wunschdomain und alternative Domain müssen verschieden sein.')
+    }
+  })
+
+  tryValidate(() => {
+    if (data.domainHolderDiffers !== true && data.domainHolderDiffers !== false) {
+      throw new BusinessFulfillmentValidationError('domainHolderDiffers', 'Bitte wähle den Domaininhaber aus.')
+    }
+  })
+
+  if (data.domainHolderDiffers) {
+    tryValidate(() => {
+      if (data.domainHolderType !== 'person' && data.domainHolderType !== 'organization') {
+        throw new BusinessFulfillmentValidationError('domainHolderType', 'Bitte wähle eine Person oder Organisation als Domaininhaber.')
+      }
+    })
+
+    const isOrganization = data.domainHolderType === 'organization'
+    if (isOrganization) {
+      tryValidate(() => {
+        requiredText(data.domainHolderOrganizationName, 'domainHolderOrganizationName', 'den Namen der Organisation', 200)
+      })
+    } else {
+      tryValidate(() => {
+        requiredText(data.domainHolderFirstName, 'domainHolderFirstName', 'den Vornamen des Domaininhabers', 100)
+      })
+
+      tryValidate(() => {
+        requiredText(data.domainHolderLastName, 'domainHolderLastName', 'den Nachnamen des Domaininhabers', 100)
+      })
+    }
+
+    tryValidate(() => {
+      requiredText(data.domainHolderStreet, 'domainHolderStreet', 'die Straße des Domaininhabers', 200)
+    })
+
+    tryValidate(() => {
+      requiredText(data.domainHolderPostalCode, 'domainHolderPostalCode', 'die Postleitzahl des Domaininhabers', 20)
+    })
+
+    tryValidate(() => {
+      requiredText(data.domainHolderCity, 'domainHolderCity', 'den Ort des Domaininhabers', 100)
+    })
+
+    tryValidate(() => {
+      countryCode(data.domainHolderCountryCode, 'domainHolderCountryCode', 'das Land des Domaininhabers')
+    })
+
+    tryValidate(() => {
+      emailAddress(data.domainHolderEmail, 'domainHolderEmail', 'den Domaininhaber')
+    })
+  }
+
+  tryValidate(() => {
+    if (data.hostingerConsent !== true) {
+      throw new BusinessFulfillmentValidationError('hostingerConsent', 'Bitte bestätige die Zustimmung zu den Hostinger-Bedingungen.')
+    }
+  })
+
+  return errors
+}

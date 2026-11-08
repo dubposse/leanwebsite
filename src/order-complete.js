@@ -1,3 +1,5 @@
+import { MANAGED_FILE_DELIVERY_NOTICE } from '../shared/order-instructions.js'
+
 const POLL_INTERVAL_MS = 4000
 const MAX_POLLS = 45
 const CONFIRMATION_PACKAGE_CODES = new Set([
@@ -88,11 +90,9 @@ export function renderOrderComplete(app) {
           <div id="oc-confirmation" class="oc-confirmation" hidden>
             <p>Vielen Dank für deine Bestellung. Deine Vertragsbestätigung steht als PDF bereit.</p>
             <div id="oc-email-confirmation-flow" hidden>
-              <p>Bitte sende die Auftragsbestätigung bei Rundum Sorglos als Anhang per E-Mail an:</p>
-              <p class="oc-contact-email">kontakt@matthiasbrehm.de</p>
-              <p>Sobald uns deine vollständigen Angaben vorliegen, beginnen wir mit der Einrichtung deiner Website.</p>
+              <p>${MANAGED_FILE_DELIVERY_NOTICE}</p>
             </div>
-            <button id="oc-confirmation-download" class="ab-checkout-button" type="button">Vertragsbestätigung als PDF herunterladen <span aria-hidden="true">↓</span></button>
+            <button id="oc-confirmation-download" class="ab-checkout-button" type="button">Vertragsbestätigung (PDF) herunterladen <span aria-hidden="true">↓</span></button>
           </div>
           <div class="oc-actions">
             <button id="oc-download" class="ab-checkout-button" type="button" hidden>Website herunterladen <span aria-hidden="true">↓</span></button>
@@ -231,7 +231,7 @@ export function renderOrderComplete(app) {
 
   confirmationDownloadButton.addEventListener('click', async () => {
     confirmationDownloadButton.disabled = true
-    show('Auftragsbestätigung wird vorbereitet …', 'pending')
+    show('Vertragsbestätigung wird vorbereitet …', 'pending')
 
     try {
       const response = await postJson('/api/orders/confirmation', credentials)
@@ -248,9 +248,20 @@ export function renderOrderComplete(app) {
       }
 
       const url = URL.createObjectURL(await response.blob())
+
+      // Extract filename from Content-Disposition header
+      let fileName = 'vertragsbestaetigung.pdf'
+      const disposition = response.headers.get('Content-Disposition')
+      if (disposition) {
+        const match = disposition.match(/filename="([^"]+)"/)
+        if (match && match[1]) {
+          fileName = match[1]
+        }
+      }
+
       const link = Object.assign(document.createElement('a'), {
         href: url,
-        download: 'auftragsbestaetigung-rundum-sorglos.pdf',
+        download: fileName,
       })
       document.body.append(link)
       link.click()

@@ -74,7 +74,7 @@ export function validateBuilderData(generators, slug, input) {
  * Produces the complete website HTML for a stored draft. The stored JSON is validated again so that nothing
  * unvalidated ever reaches the generator. Returns a Buffer.
  */
-export function renderWebsite(generators, slug, storedJson, year) {
+export function renderWebsite(generators, slug, storedJson, year, packageCode) {
   const generator = getGenerator(generators, slug)
 
   if (!Number.isInteger(year) || year < 1900 || year > 9999) {
@@ -98,7 +98,7 @@ export function renderWebsite(generators, slug, storedJson, year) {
     throw error
   }
 
-  const html = generator.generateHtml(data, year)
+  const html = generator.generateHtml(data, year, packageCode)
 
   if (typeof html !== 'string' || !/^\s*<!doctype html/i.test(html)) {
     throw new Error('Builder generator must return a complete HTML document')

@@ -1,3 +1,5 @@
+import { BUSINESS_OPERATOR_DEFAULTS } from './business-operator.js'
+
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({
     '&': '&amp;',
@@ -86,7 +88,16 @@ h2{font-size:clamp(2rem,4.5vw,3.2rem);margin-bottom:.5em}
 .big-cta{margin-top:40px;padding:clamp(28px,5vw,56px);border-radius:calc(var(--r) + 8px);background:linear-gradient(135deg,color-mix(in srgb,var(--a) 28%,transparent),color-mix(in srgb,var(--b) 22%,transparent));border:1px solid var(--line);text-align:center}
 footer{border-top:1px solid var(--line);padding:36px 0;color:var(--muted);font-size:.9rem}
 footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
-#impressum{padding:40px 0;border-top:1px solid var(--line);font-size:.9rem;color:var(--muted)}
+.legal-view{display:none;min-height:100vh;overflow-wrap:anywhere}
+.legal-view:target{display:block}
+.legal-view:target ~ .site-main{display:none}
+.legal-view .wrap{max-width:760px}
+.legal-view h1{font-size:clamp(2rem,4.5vw,3.2rem);margin-bottom:1em}
+.legal-view h2{font-size:1.2rem;line-height:1.3;letter-spacing:0;margin:1.8em 0 .5em}
+.legal-view p{margin:.65em 0}
+.legal-back{display:inline-block;margin-bottom:2rem;color:var(--text);text-decoration:underline}
+.legal-notice{font-weight:700}
+.legal-links{display:flex;gap:1.25rem;flex-wrap:wrap}
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;place-items:center;z-index:50;cursor:zoom-out}
 .lb.on{display:grid}.lb img{max-height:92vh;max-width:92vw;border-radius:12px}
 .rv{opacity:0;transform:translateY(34px);transition:opacity .8s cubic-bezier(.2,.8,.2,1),transform .8s cubic-bezier(.2,.8,.2,1);transition-delay:var(--d,0s)}
@@ -109,7 +120,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
 `
 }
 
-export function generateBusinessHtml(data, { preview = false } = {}) {
+export function generateBusinessHtml(data, { preview = false, packageCode } = {}) {
   const name = data.company.name || 'Eure Firma'
   const services = data.services.filter((service) => service.title || service.text)
   const facts = data.facts.filter((fact) => fact.value || fact.label)
@@ -125,6 +136,14 @@ export function generateBusinessHtml(data, { preview = false } = {}) {
     hasContact && ['kontakt', 'Kontakt'],
   ].filter(Boolean)
   const headline = data.hero.headline || name
+  const operator = { ...BUSINESS_OPERATOR_DEFAULTS, ...data.operator }
+  const show = (value, placeholder) => nl2br(value.trim() || `[${placeholder}]`)
+  const address = `${show(operator.street, 'Straße und Hausnummer')}<br>${show(operator.postalCode, 'Postleitzahl')} ${show(operator.city, 'Ort')}<br>${show(operator.country, 'Land')}`
+  const typeNames = { gbr: 'GbR', association: 'Verein' }
+  const managed = packageCode === 'business-rundum-sorglos'
+  const providerName = (choice, other) => choice === 'other' ? other.trim() : choice.trim()
+  const hosting = managed ? 'Hostinger' : providerName(operator.hostingProvider, operator.hostingOther)
+  const domain = managed ? 'Hostinger' : providerName(operator.domainProvider, operator.domainOther)
 
   return `<!DOCTYPE html>
 <html lang="de">
@@ -138,6 +157,33 @@ ${preview ? '<base href="about:srcdoc">' : ''}
 <style>${css(data)}</style>
 </head>
 <body>
+<section id="impressum" class="legal-view"><div class="wrap">
+  <a class="legal-back" href="#top">Zurück zur Website</a>
+  <h1>Impressum</h1><p><strong>Angaben gemäß § 5 DDG</strong></p>
+  <p>${show(operator.operatorName, 'Name des rechtlich verantwortlichen Websitebetreibers')}${operator.operatorType === 'company' ? `<br>${show(operator.legalForm, 'Rechtsform')}` : typeNames[operator.operatorType] ? `<br>${escapeHtml(typeNames[operator.operatorType])}` : ''}${operator.operatorType !== 'person' ? `<br>Vertretungsberechtigt: ${show(operator.representative, 'Vertretungsberechtigte Personen')}` : ''}<br>${address}</p>
+  <h2>Kontakt</h2><p>E-Mail: ${show(operator.email, 'Öffentliche E-Mail-Adresse')}${operator.phone.trim() ? `<br>Telefon: ${nl2br(operator.phone)}` : ''}</p>
+  ${operator.registered === 'true' ? `<h2>Registerangaben</h2><p>${show(operator.registerCourt, 'Registergericht')}<br>${show(operator.registerNumber, 'Registernummer')}</p>` : ''}
+  ${operator.vatId.trim() ? `<h2>Umsatzsteuer-Identifikationsnummer</h2><p>${nl2br(operator.vatId)}</p>` : ''}
+  ${operator.editorial === 'true' ? `<h2>Verantwortlich für journalistisch-redaktionelle Inhalte gemäß § 18 Abs. 2 MStV</h2><p>${show(operator.editorialName, 'Name')}<br>${show(operator.editorialAddress, 'Anschrift')}</p>` : ''}
+  <h2>Hinweis zu externen Links</h2><p>Diese Website kann Links zu externen Angeboten enthalten. Für deren Inhalte sind die jeweiligen Anbieter verantwortlich. Auf die Gestaltung und Inhalte externer Websites besteht kein unmittelbarer Einfluss.</p>
+</div></section>
+<section id="datenschutz" class="legal-view"><div class="wrap">
+  <a class="legal-back" href="#top">Zurück zur Website</a>
+  <h1>Datenschutzerklärung</h1>
+  <h2>1. Verantwortlicher</h2><p>Verantwortlich für die Verarbeitung personenbezogener Daten auf dieser Website ist:</p><p>${show(operator.operatorName, 'Name des Websitebetreibers')}<br>${address}</p><p>E-Mail: ${show(operator.email, 'Öffentliche E-Mail-Adresse')}${operator.phone.trim() ? `<br>Telefon: ${nl2br(operator.phone)}` : ''}</p>
+  <h2>2. Hosting und Serverprotokolle</h2>
+  ${hosting ? `<p>Als Hostinganbieter ist ${escapeHtml(hosting)} ${managed ? 'vorgesehen' : 'angegeben'}.</p>` : '<p class="legal-notice">Der Hostinganbieter ist noch nicht angegeben. Die Hostingangaben müssen vor Veröffentlichung ergänzt werden.</p>'}
+  ${domain ? `<p>Als Domainanbieter ist ${escapeHtml(domain)} ${managed ? 'vorgesehen' : 'angegeben'}.</p>` : ''}
+  <p>Beim Aufruf der Website können technisch erforderliche Informationen verarbeitet werden, insbesondere IP-Adresse, Datum und Uhrzeit des Zugriffs, angeforderte Inhalte sowie Browser- und Geräteinformationen.</p>
+  <p>Diese Verarbeitung dient der technischen Bereitstellung, Stabilität und Sicherheit der Website. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO.</p>
+  <p>Die konkrete Speicherung, Speicherdauer und gegebenenfalls Weitergabe dieser Daten richten sich nach den technischen und vertraglichen Bedingungen des eingesetzten Hostinganbieters.</p>
+  <h2>3. Funktionen, Cookies und Tracking</h2><p>Soweit vorhanden, sind Bilder in der bereitgestellten Website eingebettet. Galerie, Bildvergrößerung, Animationen und die Funktion zum Kopieren der E-Mail-Adresse werden, soweit vorhanden, auf Ihrem Gerät ausgeführt.</p><p>Diese Website verwendet in ihrer bereitgestellten Grundversion keine eigenen Cookies, Analysewerkzeuge oder Trackingdienste.</p>
+  <h2>4. Kontaktaufnahme</h2><p>Wenn Sie per E-Mail oder telefonisch Kontakt aufnehmen, werden Ihre übermittelten Angaben zur Bearbeitung Ihrer Anfrage verarbeitet.</p><p>Rechtsgrundlage ist je nach Anlass Art. 6 Abs. 1 lit. b oder lit. f DSGVO.</p><p>Die Daten werden gelöscht, sobald sie für die Bearbeitung nicht mehr benötigt werden und keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</p>
+  <h2>5. Externe Links</h2><p>Diese Website enthält gegebenenfalls Links zu externen Plattformen wie sozialen Netzwerken.</p><p>Erst beim Aufrufen dieser Links verlassen Sie diese Website. Für die dortige Datenverarbeitung gelten die Datenschutzhinweise der jeweiligen Anbieter.</p>
+  <h2>6. Ihre Rechte</h2><p>Sie haben im Rahmen der gesetzlichen Voraussetzungen das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit sowie Widerspruch gegen bestimmte Verarbeitungen.</p><p>Sie können sich außerdem bei einer zuständigen Datenschutzaufsichtsbehörde beschweren.</p>
+  <h2>7. Aktualisierung</h2><p>Diese Datenschutzerklärung gilt für die aktuelle technische Ausgestaltung der Website. Werden weitere Dienste, Funktionen oder Datenverarbeitungen hinzugefügt, muss sie entsprechend angepasst werden.</p>
+</div></section>
+<div class="site-main">
 <div class="cursor" id="glow" aria-hidden="true"></div>
 <header class="nav" id="nav"><div class="wrap">
   <a class="logo" href="#top">${data.logo ? `<img src="${data.logo}" alt="${escapeHtml(name)} Logo">` : escapeHtml(name)}</a>
@@ -189,18 +235,11 @@ ${gallery.length ? `<section id="galerie"><div class="wrap">
 
 <footer><div class="wrap">
   <span>© <span id="y"></span> ${escapeHtml(name)}</span>
-  <span>${safeUrl(contact.instagram) ? `<a href="${safeUrl(contact.instagram)}" target="_blank" rel="noopener">Instagram</a> · ` : ''}<a href="#impressum">Impressum</a></span>
+  <span class="legal-links">${safeUrl(contact.instagram) ? `<a href="${safeUrl(contact.instagram)}" target="_blank" rel="noopener">Instagram</a>` : ''}<a href="#impressum">Impressum</a><a href="#datenschutz">Datenschutz</a></span>
 </div></footer>
 
-<section id="impressum"><div class="wrap">
-  <strong>Impressum</strong><br>
-  ${escapeHtml(name)}${data.legal.owner ? '<br>Inhaber: ' + escapeHtml(data.legal.owner) : ''}
-  ${contact.address ? '<br>' + nl2br(contact.address) : ''}
-  ${contact.email ? '<br>E-Mail: ' + escapeHtml(contact.email) : ''}${contact.phone ? '<br>Telefon: ' + escapeHtml(contact.phone) : ''}
-  ${data.legal.vat ? '<br>USt-IdNr.: ' + escapeHtml(data.legal.vat) : ''}
-</div></section>
-
 <div class="lb" id="lb"><img alt=""></div>
+</div>
 <script>
 (function(){
   var $=function(s){return document.querySelector(s)};

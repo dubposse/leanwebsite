@@ -17,7 +17,7 @@ function renderInlineMarkdown(value) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 }
 
-export function renderMarkdown(markdown) {
+export function renderMarkdown(markdown, { preserveLineBreaks = false, paragraphClass = () => '' } = {}) {
   const output = []
   let paragraph = []
   let listOpen = false
@@ -26,7 +26,9 @@ export function renderMarkdown(markdown) {
 
   const flushParagraph = () => {
     if (!paragraph.length) return
-    output.push(`<p>${paragraph.map(renderInlineMarkdown).join(' ')}</p>`)
+    const className = paragraphClass(paragraph)
+    const attribute = className ? ` class="${escapeHtml(className)}"` : ''
+    output.push(`<p${attribute}>${paragraph.map(renderInlineMarkdown).join(preserveLineBreaks ? '<br>' : ' ')}</p>`)
     paragraph = []
   }
   const closeList = () => {

@@ -9,6 +9,8 @@ import {
   validateBuilderData,
 } from '../api/_lib/generators.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
+import { artistBandLegalErrors, LEGAL_DEFAULTS } from '../shared/artist-band-legal.js'
+import { loadPaidSnapshot } from '../api/_lib/downloads.js'
 import { generateBusinessHtml } from '../shared/business-template.js'
 import { createFakeDb, createFakeStorage, createFakeStripe } from './helpers/fakes.js'
 
@@ -38,7 +40,23 @@ function artistData(overrides = {}) {
     email: '',
     cover: '',
     tracks: [{ a: 'Midnight Acid', b: '' }],
+    gigsHeading: 'Live',
     gigs: [{ a: '2026-11-21', b: 'Berlin · Club Posse' }],
+    ...overrides,
+  }
+}
+
+function legalData(overrides = {}) {
+  return {
+    ...LEGAL_DEFAULTS,
+    operatorName: 'Ada Beispiel',
+    street: 'Musterstraße 1',
+    postalCode: '10115',
+    city: 'Berlin',
+    country: 'Deutschland',
+    email: 'ada@example.de',
+    confirmPublic: true,
+    confirmReviewed: true,
     ...overrides,
   }
 }
@@ -67,10 +85,224 @@ function businessData(overrides = {}) {
 }
 
 describe('builder generators', () => {
+  it('uses self-contained fragment views for legal information without scripts', () => {
+    for (const packageCode of ['artist-band-code-and-go', 'artist-band-rundum-sorglos']) {
+      const data = artistData({ legal: legalData() })
+      const html = renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(data)), 2042, packageCode).toString()
+      assert.match(html, /\.legal-section\{display:none;/)
+      assert.match(html, /\.legal-section:target\{display:block\}/)
+      assert.match(html, /\.legal-section:target ~ \.site-main\{display:none\}/)
+      assert.match(html, /<section id="impressum"[\s\S]*?href="#website"[\s\S]*?<\/section>\s*<section id="datenschutz"[\s\S]*?href="#website"[\s\S]*?<\/section>\s*<div id="website" class="site-main">/)
+      assert.match(html, /href="#impressum">Impressum<\/a>/)
+      assert.match(html, /href="#datenschutz">Datenschutz<\/a>/)
+      assert.match(html, /Ada Beispiel/)
+      assert.match(html, /Diese Datenschutzerklärung gilt für die aktuelle technische Ausgestaltung der Website\./)
+      assert.doesNotMatch(html, /<script\b|<base\b/i)
+    }
+  })
+
+  it('validates operator types, conditional fields and confirmations for checkout', () => {
+    for (const operatorType of ['person', 'gbr', 'association', 'company']) {
+      const legal = legalData({ operatorType, representative: 'Ada Vertreter', legalForm: 'GmbH' })
+      assert.deepEqual(artistBandLegalErrors(legal, 'artist-band-code-and-go'), [])
+      assert.deepEqual(validate(artistData({ legal })).legal, legal)
+      if (operatorType !== 'person') {
+        assert.ok(artistBandLegalErrors({ ...legal, representative: '' }, 'artist-band-code-and-go').some((e) => e.field === 'representative'))
+      }
+    }
+    const errors = artistBandLegalErrors(legalData({
+      operatorType: 'company', legalForm: '', registered: true, editorial: true,
+      email: 'invalid', hostingProvider: 'other', domainProvider: 'other',
+      confirmPublic: false, confirmReviewed: false,
+    }), 'artist-band-code-and-go').map((error) => error.field)
+    for (const field of ['legalForm', 'representative', 'email', 'registerCourt', 'registerNumber', 'editorialName', 'editorialAddress', 'hostingOther', 'domainOther', 'confirmPublic', 'confirmReviewed']) {
+      assert.ok(errors.includes(field), field)
+    }
+    assert.ok(!artistBandLegalErrors(legalData({ hostingProvider: 'other' }), 'artist-band-rundum-sorglos').some((e) => e.field === 'hostingOther'))
+    assert.throws(() => validate(artistData({ legal: { operatorType: 'invalid' } })), { statusCode: 422 })
+    assert.throws(() => validate(artistData({ legal: { unexpected: 'x' } })), { statusCode: 422 })
+  })
+
+  it('renders the supplied legal texts safely with preview placeholders and package-specific hosting', () => {
+    const preview = generateArtistBandHtml(artistData(), 2042)
+    assert.match(preview, /href="#impressum"/)
+    assert.match(preview, /href="#datenschutz"/)
+    assert.match(preview, /Die Hostingangaben müssen vor Veröffentlichung ergänzt werden/)
+    const legal = legalData({
+      operatorType: 'company', legalForm: 'GmbH', representative: 'A & B',
+      operatorName: '<script>alert(1)</script>', registered: true, registerCourt: 'Berlin',
+      registerNumber: '123', editorial: true, editorialName: 'Ada', editorialAddress: 'Berlin',
+      hostingProvider: 'other', hostingOther: 'Beispielhosting',
+    })
+    const html = generateArtistBandHtml(artistData({ legal }), 2042, undefined, 'artist-band-code-and-go')
+    assert.ok(!html.includes('<script>'))
+    assert.match(html, /&#60;script&#62;alert\(1\)&#60;\/script&#62;/)
+    assert.match(html, /Diese Website wird bei Beispielhosting betrieben/)
+    assert.match(html, /Registerangaben/)
+    assert.match(html, /journalistisch-redaktionelle Inhalte gemäß § 18 Abs\. 2 MStV/)
+    for (const text of [
+      'Angaben gemäß § 5 DDG',
+      'Diese Website kann Links zu externen Angeboten enthalten. Für deren Inhalte sind die jeweiligen Anbieter verantwortlich.',
+      'Auf die Gestaltung und Inhalte externer Websites besteht kein unmittelbarer Einfluss.',
+      'Verantwortlich für die Verarbeitung personenbezogener Daten auf dieser Website ist:',
+      'Beim Aufruf der Website können technisch erforderliche Informationen verarbeitet werden, insbesondere IP-Adresse, Datum und Uhrzeit des Zugriffs, angeforderte Inhalte sowie Browser- und Geräteinformationen.',
+      'Diese Verarbeitung dient der technischen Bereitstellung, Stabilität und Sicherheit der Website. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO.',
+      'Die konkrete Speicherung, Speicherdauer und gegebenenfalls Weitergabe dieser Daten richten sich nach den technischen und vertraglichen Bedingungen des eingesetzten Hostinganbieters.',
+      'Diese Website verwendet in ihrer bereitgestellten Grundversion keine eigenen Cookies, Analysewerkzeuge oder Trackingdienste.',
+      'Wenn Sie per E-Mail Kontakt aufnehmen, werden Ihre übermittelten Angaben zur Bearbeitung Ihrer Anfrage verarbeitet.',
+      'Rechtsgrundlage ist je nach Anlass Art. 6 Abs. 1 lit. b oder lit. f DSGVO.',
+      'Die Daten werden gelöscht, sobald sie für die Bearbeitung nicht mehr benötigt werden und keine gesetzlichen Aufbewahrungspflichten entgegenstehen.',
+      'Diese Website enthält gegebenenfalls Links zu externen Plattformen wie Musikdiensten oder sozialen Netzwerken.',
+      'Erst beim Aufrufen dieser Links verlassen Sie diese Website. Für die dortige Datenverarbeitung gelten die Datenschutzhinweise der jeweiligen Anbieter.',
+      'Sie haben im Rahmen der gesetzlichen Voraussetzungen das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit sowie Widerspruch gegen bestimmte Verarbeitungen.',
+      'Sie können sich außerdem bei einer zuständigen Datenschutzaufsichtsbehörde beschweren.',
+      'Diese Datenschutzerklärung gilt für die aktuelle technische Ausgestaltung der Website.',
+      'Werden weitere Dienste, Funktionen oder Datenverarbeitungen hinzugefügt, muss sie entsprechend angepasst werden.',
+    ]) assert.ok(html.includes(text), text)
+    const managed = generateArtistBandHtml(artistData({ legal }), 2042, undefined, 'artist-band-rundum-sorglos')
+    assert.match(managed, /Diese Website wird bei Hostinger betrieben/)
+    assert.ok(!managed.includes('Diese Website wird bei Beispielhosting betrieben'))
+  })
+
+  it('binds legal information and confirmed package hosting to each paid website download', async () => {
+    for (const packageCode of ['artist-band-code-and-go', 'artist-band-rundum-sorglos']) {
+      const sql = createFakeDb()
+      const storage = createFakeStorage()
+      const stripe = createFakeStripe()
+      const { draftId, draftToken } = await createDraft({ sql, builderSlug: 'artist-band' })
+      const data = artistData({ legal: legalData({ hostingProvider: 'IONOS' }) })
+      await saveDraft({ sql, put: storage.putObject, generators: defaultGenerators, draftId, draftToken, builderSlug: 'artist-band', data })
+      const fulfillmentData = {
+        firstName: 'Ada', lastName: 'Beispiel', billingStreet: 'Straße 1', billingPostalCode: '10115',
+        billingCity: 'Berlin', billingCountryCode: 'DE', communicationEmail: 'ada@example.de',
+        desiredDomain: 'beispiel.de', alternativeDomain: null, domainHolderDiffers: false, hostingerConsent: true,
+      }
+      await createCheckoutSession({
+        sql, stripe, storage, generators: defaultGenerators, siteUrl: 'https://leanwebsite.example', year: 2042,
+        request: { draftId, draftToken, builderSlug: 'artist-band', packageCode, ...(packageCode.endsWith('rundum-sorglos') && { fulfillmentData }) },
+      })
+      sql.orders[0].status = 'paid'
+      const download = await loadPaidSnapshot({ sql, storage, body: { draftId, draftToken } })
+      const html = download.body.toString()
+      assert.equal(download.fileName, 'website.html')
+      assert.match(html, /<section id="impressum"/)
+      assert.match(html, /<section id="datenschutz"/)
+      assert.ok(html.includes('Diese Website verwendet in ihrer bereitgestellten Grundversion keine eigenen Cookies, Analysewerkzeuge oder Trackingdienste.'))
+      assert.ok(html.includes(`Diese Website wird bei ${packageCode.endsWith('rundum-sorglos') ? 'Hostinger' : 'IONOS'} betrieben.`))
+    }
+  })
+
+  it('allows old and incomplete drafts to be saved but rejects incomplete legal data before checkout', async () => {
+    const sql = createFakeDb()
+    const storage = createFakeStorage()
+    const stripe = createFakeStripe()
+    const { draftId, draftToken } = await createDraft({ sql, builderSlug: 'artist-band' })
+    for (const data of [artistData(), artistData({ legal: { operatorName: 'Ada' } })]) {
+      await saveDraft({ sql, put: storage.putObject, generators: defaultGenerators, draftId, draftToken, builderSlug: 'artist-band', data })
+      const loaded = await loadDraft({ sql, get: storage.getObject, draftId, draftToken })
+      assert.equal(loaded.data.name, 'DJ Nova')
+      await assert.rejects(createCheckoutSession({
+        sql, stripe, storage, generators: defaultGenerators, siteUrl: 'https://leanwebsite.example', year: 2042,
+        request: { draftId, draftToken, builderSlug: 'artist-band', packageCode: 'artist-band-code-and-go' },
+      }), { statusCode: 422 })
+      assert.equal(stripe.createCalls, 0)
+    }
+  })
+
   it('is registered and validates the real artist and band data model', () => {
     assert.ok(defaultGenerators['artist-band'])
     assert.deepEqual(validate(artistData()), artistData())
     assert.deepEqual(validate(artistData({ spotify: 'https://open.spotify.com/artist/example' })).spotify, 'https://open.spotify.com/artist/example')
+  })
+
+  it('defaults and validates the gig heading for current and legacy data', () => {
+    const legacy = artistData()
+    delete legacy.gigsHeading
+    for (const data of [legacy, artistData({ gigsHeading: '' }), artistData({ gigsHeading: '   ' })]) {
+      assert.equal(validate(data).gigsHeading, 'Live')
+      assert.match(generateArtistBandHtml(data, 2042), /<h2>Live<\/h2><div class="row gig-row">/)
+      assert.match(renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(data)), 2042).toString(), /<h2>Live<\/h2><div class="row gig-row">/)
+    }
+    assert.equal(validate(artistData({ gigsHeading: 'x'.repeat(40) })).gigsHeading.length, 40)
+    for (const gigsHeading of ['x'.repeat(41), null, 123]) {
+      assert.throws(() => validate(artistData({ gigsHeading })), { statusCode: 422 })
+    }
+  })
+
+  it('escapes the gig heading identically in preview and server output for both packages', () => {
+    const gigs = [{ a: '2026-11-21', b: 'Berlin · Club Posse' }, { a: 'Termin offen', b: 'Bandprobe' }]
+    for (const gigsHeading of ['Bandmitglieder', '<Band & "Freunde">']) {
+      const data = validate(artistData({ gigsHeading, gigs }))
+      const expected = gigsHeading === 'Bandmitglieder' ? gigsHeading : '&#60;Band &#38; &#34;Freunde&#34;&#62;'
+      for (const packageCode of ['artist-band-code-and-go', 'artist-band-rundum-sorglos']) {
+        const preview = generateArtistBandHtml(data, 2042, undefined, packageCode)
+        const download = renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(data)), 2042, packageCode).toString()
+        assert.equal(preview, download)
+        assert.ok(preview.includes(`<h2>${expected}</h2><div class="row gig-row">`))
+        assert.match(preview, /datetime="2026-11-21" aria-label="21\. November 2026"/)
+        assert.match(preview, /<span class="gig-date-text">Termin offen<\/span><span>Bandprobe<\/span>/)
+        assert.match(preview, /<h2>Über<\/h2>/)
+        assert.match(preview, /<h2>Releases<\/h2>/)
+      }
+    }
+  })
+
+  it('saves and reloads the gig heading with unchanged gig data', async () => {
+    const sql = createFakeDb()
+    const storage = createFakeStorage()
+    const { draftId, draftToken } = await createDraft({ sql, builderSlug: 'artist-band' })
+    const data = artistData({ gigsHeading: 'Bandmitglieder', gigs: [{ a: 'Termin offen', b: 'Berlin' }] })
+    await saveDraft({ sql, put: storage.putObject, generators: defaultGenerators, draftId, draftToken, builderSlug: 'artist-band', data })
+    const loaded = await loadDraft({ sql, get: storage.getObject, draftId, draftToken })
+    assert.equal(loaded.data.gigsHeading, 'Bandmitglieder')
+    assert.deepEqual(loaded.data.gigs, data.gigs)
+    assert.match(generateArtistBandHtml(loaded.data, 2042), /<h2>Bandmitglieder<\/h2>/)
+  })
+
+  it('renders every ISO gig month and both single- and double-digit days without changing stored data', () => {
+    const months = [
+      ['JAN', 'Januar'], ['FEB', 'Februar'], ['MÄR', 'März'], ['APR', 'April'],
+      ['MAI', 'Mai'], ['JUN', 'Juni'], ['JUL', 'Juli'], ['AUG', 'August'],
+      ['SEP', 'September'], ['OKT', 'Oktober'], ['NOV', 'November'], ['DEZ', 'Dezember'],
+    ]
+    const gigs = months.map((_, index) => ({
+      a: `2026-${String(index + 1).padStart(2, '0')}-${index % 2 ? '21' : '01'}`,
+      b: `Ort ${index + 1}`,
+    }))
+    const data = validate(artistData({ gigs }))
+    assert.deepEqual(data.gigs, gigs)
+    for (const contentFont of ['standard', 'genre', 'claim']) {
+      const selected = { ...data, contentFont }
+      const html = generateArtistBandHtml(selected, 2042)
+      assert.equal(html, renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(selected)), 2042).toString())
+      for (const [index, [short, full]] of months.entries()) {
+        const day = index % 2 ? 21 : 1
+        assert.ok(html.includes(`<time class="gig-date" datetime="${gigs[index].a}" aria-label="${day}. ${full} 2026"><span class="gig-day">${day}</span><span class="gig-month">${short}</span></time>`))
+        assert.ok(html.includes(`<span>Ort ${index + 1}</span><span class="gig-year" aria-hidden="true">2026</span>`))
+      }
+    }
+  })
+
+  it('preserves escaped free-text and incomplete gig dates and rejects invalid calendar dates', () => {
+    const gigs = [
+      { a: '2024-02-29', b: 'Schaltjahr' },
+      { a: '2025-02-29', b: 'Kein Schaltjahr' },
+      { a: '2026-04-31', b: '' },
+      { a: '2026-13-01', b: '' },
+      { a: '0000-01-01', b: '' },
+      { a: 'Termin <offen>', b: 'Club & Bar' },
+      { a: '', b: 'Nur Ort' },
+      { a: '2026-', b: '' },
+    ]
+    const html = generateArtistBandHtml(artistData({ gigs }), 2042)
+    assert.match(html, /datetime="2024-02-29" aria-label="29\. Februar 2024"/)
+    for (const value of ['2025-02-29', '2026-04-31', '2026-13-01', '0000-01-01', '2026-']) {
+      assert.ok(html.includes(`<span class="gig-date-text">${value}</span>`))
+      assert.ok(!html.includes(`datetime="${value}"`))
+    }
+    assert.ok(html.includes('Termin &#60;offen&#62;'))
+    assert.ok(html.includes('Club &#38; Bar'))
+    assert.ok(html.includes('<span>Nur Ort</span>'))
   })
 
   it('defaults legacy drafts to standard typography and automatic text color', () => {
@@ -96,8 +328,11 @@ describe('builder generators', () => {
     assert.equal(genreAccent.accent, '#c6ff00')
     assert.match(genreHtml, /<body data-content-font="genre" data-content-color="accent">/)
     assert.match(genreCss, /body\[data-content-color="accent"\]\{--content-fg:var\(--acc\)\}/)
-    assert.match(genreCss, /body\[data-content-font="genre"\] \.content-section\{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:\.95rem;letter-spacing:\.025em;line-height:1\.7\}/)
-    assert.match(genreCss, /body\[data-content-font="genre"\] \.content-section h2\{font-size:\.8rem;letter-spacing:\.3em\}/)
+    assert.match(genreCss, /\.genre,body\[data-content-font="genre"\] \.content-section,body\[data-content-font="genre"\] \.content-section h2\{letter-spacing:\.3em\}/)
+    assert.match(genreCss, /body\[data-content-font="genre"\] \.content-section\{font-size:\.95rem;line-height:1\.7\}/)
+    assert.match(genreCss, /body\[data-content-font="genre"\] \.content-section h2\{font-size:\.8rem\}/)
+    assert.match(genreCss, /\.content-section h2\{font-size:\.85rem;font-weight:inherit;text-transform:none;color:inherit;margin:0 0 1rem\}/)
+    assert.match(genreCss, /\.content-section p\{margin:0;line-height:1\.75\}/)
     assert.match(genreHtml, /<section class="content-section"><h2>Über<\/h2>/)
     assert.equal((genreCss.match(/{/g) ?? []).length, (genreCss.match(/}/g) ?? []).length)
 
@@ -106,13 +341,39 @@ describe('builder generators', () => {
     const claimCss = artistCss(claimHtml)
     assert.match(claimHtml, /<body data-content-font="claim" data-content-color="claim">/)
     assert.match(claimCss, /body\[data-content-color="claim"\]\{--content-fg:var\(--mut\)\}/)
-    assert.match(claimCss, /body\[data-content-font="claim"\] \.content-section\{font-family:Georgia,"Times New Roman",serif;font-size:1\.15rem;letter-spacing:\.01em;line-height:1\.75\}/)
-    assert.match(claimCss, /body\[data-content-font="claim"\] \.content-section h2\{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:1rem;letter-spacing:\.18em\}/)
+    assert.match(claimCss, /body\[data-content-font="claim"\] \.content-section\{font-size:1\.15rem;line-height:1\.75\}/)
+    assert.match(claimCss, /body\[data-content-font="claim"\] \.content-section h2\{font-size:1rem\}/)
+    assert.doesNotMatch(claimCss, /ui-monospace|Georgia,"Times New Roman"/)
     assert.equal((claimCss.match(/{/g) ?? []).length, (claimCss.match(/}/g) ?? []).length)
     assert.equal(
       generateArtistBandHtml(claimColor, 2042),
       renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(claimColor)), 2042).toString(),
     )
+  })
+
+  it('preserves every font and color selection across validation, preview and download', () => {
+    for (const contentFont of ['standard', 'genre', 'claim']) {
+      for (const contentColor of ['auto', 'accent', 'claim']) {
+        const data = validate(artistData({ contentFont, contentColor, bio: 'Produzent und DJ aus der Posse.' }))
+        const preview = generateArtistBandHtml(data, 2042)
+        const download = renderWebsite(defaultGenerators, 'artist-band', Buffer.from(JSON.stringify(data)), 2042).toString()
+        assert.equal(preview, download)
+        assert.match(preview, new RegExp(`<body data-content-font="${contentFont}" data-content-color="${contentColor}">`))
+        assert.match(preview, /<p>Produzent und DJ aus der Posse\.<\/p>/)
+      }
+    }
+  })
+
+  it('saves and restores all content font selections in drafts', async () => {
+    const sql = createFakeDb()
+    const storage = createFakeStorage()
+    const { draftId, draftToken } = await createDraft({ sql, builderSlug: 'artist-band' })
+    for (const contentFont of ['standard', 'genre', 'claim']) {
+      const data = artistData({ contentFont })
+      await saveDraft({ sql, put: storage.putObject, generators: defaultGenerators, draftId, draftToken, builderSlug: 'artist-band', data })
+      const loaded = await loadDraft({ sql, get: storage.getObject, draftId, draftToken })
+      assert.equal(loaded.data.contentFont, contentFont)
+    }
   })
 
   describe('business generator', () => {
@@ -204,7 +465,7 @@ describe('builder generators', () => {
       assert.match(html, /@keyframes shine/)
       assert.match(html, /id="lb"/)
       assert.match(html, /IntersectionObserver/)
-      assert.match(html, /<strong>Impressum<\/strong>/)
+      assert.match(html, /<h1>Impressum<\/h1>/)
       assert.match(html, /Nordlicht Studio/)
     })
   })
@@ -306,6 +567,7 @@ describe('builder generators', () => {
       cover: `data:image/jpeg;base64,${JPEG_BASE64}`,
       contentFont: 'claim',
       contentColor: 'accent',
+      legal: legalData(),
     })
 
     await saveDraft({ sql, put: storage.putObject, generators: defaultGenerators, draftId, draftToken, builderSlug: 'artist-band', data })

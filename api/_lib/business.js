@@ -1,5 +1,6 @@
 import jpeg from 'jpeg-js'
 import { generateBusinessHtml } from '../../shared/business-template.js'
+import { businessOperatorErrors, BUSINESS_OPERATOR_CHOICES, BUSINESS_OPERATOR_DEFAULTS, BUSINESS_OPERATOR_LIMITS } from '../../shared/business-operator.js'
 
 const MAX_DRAFT_REQUEST_BYTES = 4 * 1024 * 1024
 const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024
@@ -44,7 +45,7 @@ const FIELD_LIMITS = Object.freeze({
   'legal.notes': 5000,
 })
 
-const DATA_KEYS = Object.freeze(Object.keys(DEFAULT_DATA))
+const DATA_KEYS = Object.freeze([...Object.keys(DEFAULT_DATA), 'operator'])
 const DATA_IMAGE_URL = /^data:image\/(jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/
 const INVALID_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
 
@@ -242,6 +243,18 @@ export function validateBusinessData(input, BuilderValidationError, maxImageByte
     logo: input.logo === undefined ? '' : input.logo,
   }
 
+  if (Object.hasOwn(input, 'operator')) {
+    const operator = sectionInput(input, 'operator', BUSINESS_OPERATOR_DEFAULTS, BuilderValidationError)
+    for (const [field, value] of Object.entries(operator)) {
+      if (typeof value !== 'string' || value.length > BUSINESS_OPERATOR_LIMITS[field]
+        || INVALID_CONTROL_CHARACTERS.test(value)
+        || (Object.hasOwn(BUSINESS_OPERATOR_CHOICES, field) && !BUSINESS_OPERATOR_CHOICES[field].includes(value))) {
+        invalid(BuilderValidationError, 'Invalid business operator data')
+      }
+    }
+    data.operator = operator
+  }
+
   if (
     typeof data.design.accent !== 'string'
     || !/^#[0-9a-f]{6}$/i.test(data.design.accent)
@@ -326,8 +339,11 @@ export function createBusinessGenerator({ BuilderValidationError, maxImageBytes 
     validate(input) {
       return validateBusinessData(input, BuilderValidationError, maxImageBytes)
     },
-    generateHtml(data) {
-      return generateBusinessHtml(data)
+    validateForCheckout(data, packageCode) {
+      return businessOperatorErrors({ ...BUSINESS_OPERATOR_DEFAULTS, ...data.operator }, packageCode)
+    },
+    generateHtml(data, _year, packageCode) {
+      return generateBusinessHtml(data, { packageCode })
     },
   })
 }

@@ -1,5 +1,6 @@
 import jpeg from 'jpeg-js'
 import { generateArtistBandHtml } from '../../shared/artist-band-template.js'
+import { artistBandLegalErrors, LEGAL_DEFAULTS, LEGAL_PROVIDERS, LEGAL_TYPES } from '../../shared/artist-band-legal.js'
 
 export { generateArtistBandHtml }
 
@@ -8,6 +9,7 @@ const FIELD_LIMITS = Object.freeze({
   genre: 120,
   tagline: 180,
   bio: 3000,
+  gigsHeading: 40,
   spotify: 2048,
   soundcloud: 2048,
   bandcamp: 2048,
@@ -115,7 +117,7 @@ function validateRows(value, BuilderValidationError) {
 export function validateArtistBandData(input, BuilderValidationError) {
   const fields = [
     'name', 'genre', 'tagline', 'bio', 'accent', 'theme', 'contentFont', 'contentColor', 'spotify', 'soundcloud',
-    'bandcamp', 'instagram', 'email', 'cover', 'tracks', 'gigs',
+    'bandcamp', 'instagram', 'email', 'cover', 'tracks', 'gigsHeading', 'gigs', 'legal',
   ]
   if (!isPlainObject(input) || Object.keys(input).some((key) => !fields.includes(key))) {
     invalid(BuilderValidationError)
@@ -141,8 +143,12 @@ export function validateArtistBandData(input, BuilderValidationError) {
     email: validateString(input, 'email', BuilderValidationError),
     cover: validateString(input, 'cover', BuilderValidationError, { max: 3 * 1024 * 1024 }),
     tracks: input.tracks,
+    gigsHeading: Object.hasOwn(input, 'gigsHeading')
+      ? validateString(input, 'gigsHeading', BuilderValidationError)
+      : 'Live',
     gigs: input.gigs,
   }
+  if (!data.gigsHeading.trim()) data.gigsHeading = 'Live'
 
   if (
     !/^#[0-9a-f]{6}$/i.test(data.accent)
@@ -161,6 +167,24 @@ export function validateArtistBandData(input, BuilderValidationError) {
   data.tracks = validateRows(data.tracks, BuilderValidationError)
   data.gigs = validateRows(data.gigs, BuilderValidationError)
 
+  if (Object.hasOwn(input, 'legal')) {
+    if (!isPlainObject(input.legal) || Object.keys(input.legal).some((key) => !Object.hasOwn(LEGAL_DEFAULTS, key))) {
+      invalid(BuilderValidationError, 'Invalid artist legal data')
+    }
+    const legal = {}
+    for (const [key, defaultValue] of Object.entries(LEGAL_DEFAULTS)) {
+      const value = input.legal[key] ?? defaultValue
+      if (typeof value !== typeof defaultValue || (typeof value === 'string' && value.length > 500)) {
+        invalid(BuilderValidationError, 'Invalid artist legal data')
+      }
+      legal[key] = value
+    }
+    if (!LEGAL_TYPES.includes(legal.operatorType) || !LEGAL_PROVIDERS.includes(legal.hostingProvider) || !LEGAL_PROVIDERS.includes(legal.domainProvider)) {
+      invalid(BuilderValidationError, 'Invalid artist legal data')
+    }
+    data.legal = legal
+  }
+
   return data
 }
 
@@ -169,8 +193,12 @@ export function createArtistBandGenerator(dependencies) {
     validate(input) {
       return validateArtistBandData(input, dependencies.BuilderValidationError)
     },
-    generateHtml(data, year) {
-      return generateArtistBandHtml(data, year, dependencies.escapeHtml)
+    validateForCheckout(input, packageCode) {
+      const data = validateArtistBandData(input, dependencies.BuilderValidationError)
+      return artistBandLegalErrors({ ...LEGAL_DEFAULTS, ...data.legal }, packageCode)
+    },
+    generateHtml(data, year, packageCode) {
+      return generateArtistBandHtml(data, year, dependencies.escapeHtml, packageCode)
     },
   })
 }
