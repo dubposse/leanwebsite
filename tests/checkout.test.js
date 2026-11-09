@@ -144,6 +144,8 @@ describe('POST /api/checkout', () => {
       const { params, options } = stripe.sessions.get('cs_test_1')
       assert.equal(params.mode, 'payment')
       assert.equal(params.customer_creation, 'always')
+      assert.deepEqual(params.invoice_creation, { enabled: true })
+      assert.equal(params.billing_address_collection, 'required')
       assert.deepEqual(params.name_collection, {
         individual: { enabled: true, optional: false },
         business: { enabled: true, optional: true },
@@ -156,6 +158,7 @@ describe('POST /api/checkout', () => {
       assert.equal(params.line_items[0].price_data.product_data.name, 'Artist & Band – Code & Go')
       assert.equal(params.line_items[0].price_data.product_data.description, 'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.')
       assert.equal('automatic_tax' in params, false)
+      assert.equal('tax_rates' in params.line_items[0], false)
       assert.equal(params.success_url, `${SITE_URL}/order/complete?checkout=success&builder=artist-band`)
       assert.equal(params.cancel_url, `${SITE_URL}/order/complete?checkout=cancelled&builder=artist-band`)
       assert.doesNotMatch(`${params.success_url}${params.cancel_url}`, /draftId|draftToken|33333333/)

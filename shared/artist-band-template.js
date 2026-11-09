@@ -169,7 +169,7 @@ ${data.bio.trim() ? `<section class="content-section"><h2>Über</h2><p>${esc(dat
 ${tracks ? `<section class="content-section"><h2>Releases</h2>${tracks}</section>` : ''}
 ${gigs ? `<section class="content-section"><h2>${esc(data.gigsHeading?.trim() ? data.gigsHeading : 'Live')}</h2>${gigs}</section>` : ''}
 ${links || email ? `<section class="content-section"><h2>Folgen &amp; Booking</h2><div class="pills">${links}${email ? `<a class="pill" href="mailto:${esc(email)}">Booking</a>` : ''}</div></section>` : ''}
-<footer>© ${year} ${name} · erstellt mit LeanWebsite<nav class="legal-links" aria-label="Rechtliche Informationen"><a href="#impressum">Impressum</a><a href="#datenschutz">Datenschutz</a></nav></footer>
+<footer>© ${year} ${name}<nav class="legal-links" aria-label="Rechtliche Informationen"><a href="#impressum">Impressum</a><a href="#datenschutz">Datenschutz</a></nav></footer>
 </div>
 </body></html>`
 }

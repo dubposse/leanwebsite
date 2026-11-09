@@ -10,6 +10,7 @@ import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { generateArtistBandHtml } from '../shared/artist-band-template.js'
 import { artistBandLegalErrors, LEGAL_DEFAULTS } from '../shared/artist-band-legal.js'
 import { setupArtistBandMobileView } from './artist-band-mobile-view.js'
+import { copyArtistBandLink } from './artist-band-link-copy.js'
 import {
   collectArtistBandFulfillment,
   createArtistBandCheckoutPayload,
@@ -188,7 +189,7 @@ export function renderArtistBandBuilder(app) {
       <header class="ab-header">
         <a class="ab-brand" href="/" aria-label="Zur LeanWebsite-Startseite">
           <span class="ab-brand-mark" aria-hidden="true">L</span>
-          <span>LeanWebsite</span>
+          <span>LeanWebsite Studio</span>
         </a>
         <a class="ab-back" href="/">Zur Startseite <span aria-hidden="true">↗</span></a>
       </header>
@@ -221,6 +222,15 @@ export function renderArtistBandBuilder(app) {
                     <label class="ab-field">Schriftstil der Inhalte<select name="contentFont"><option value="standard">Standard</option><option value="genre">Genre-Stil</option><option value="claim">Claim-Stil</option></select></label>
                     <label class="ab-field">Textfarbe der Inhalte<select name="contentColor"><option value="auto">Automatisch</option><option value="accent">Akzentfarbe</option><option value="claim">Claim-Farbe</option></select></label>
                     <label class="ab-field">Cover-Bild<span class="ab-file-control"><input id="ab-cover" type="file" accept="image/*"><span>Bild auswählen</span></span><span id="ab-cover-name" class="ab-field-hint">Wird als JPEG verarbeitet (max. 1,5 MB).</span></label>
+                    <details class="ab-cover-help ab-field-wide">
+                      <summary>Tipps für dein Cover-Bild</summary>
+                      <div>
+                        <p>Verwende möglichst ein hochauflösendes Querformat, beispielsweise 1920 × 1080 Pixel. Platziere wichtige Motive möglichst mittig und lasse ausreichend Abstand zu den Bildrändern.</p>
+                        <p>Je nach Bildschirmgröße kann sich der sichtbare Bildausschnitt verändern.</p>
+                        <p>Tipp: Verkleinere dein Browserfenster am Computer, um unterschiedliche Bildschirmbreiten zu prüfen. Alternativ kannst du die Darstellung auf deinem Smartphone kontrollieren.</p>
+                        <p>Bearbeite und bestelle deine Website möglichst auf demselben Gerät, damit dein gespeicherter Entwurf eindeutig zugeordnet bleibt.</p>
+                      </div>
+                    </details>
                     <p class="ab-field-hint ab-field-wide">Bei Akzentfarbe als Textfarbe kann die Lesbarkeit je nach gewählter Farbe variieren.</p>
                   </div>
                   <div id="ab-cover-preview-wrap" class="ab-cover-preview-wrap" hidden><img id="ab-cover-preview" alt="Vorschau des Cover-Bildes"><button id="ab-remove-cover" class="ab-text-button" type="button">Cover entfernen</button></div>
@@ -228,18 +238,19 @@ export function renderArtistBandBuilder(app) {
 
                 <section class="ab-card">
                   <div class="ab-card-heading"><span>02</span><div><h2>Releases &amp; Live</h2><p>Füge Songs und kommende Termine hinzu.</p></div></div>
-                  <div class="ab-list-section"><div class="ab-list-title"><h3>Tracks</h3><button class="ab-add" id="ab-add-track" type="button">+ Track hinzufügen</button></div><div id="ab-tracks" class="ab-list"></div></div>
+                  <div class="ab-list-section"><div class="ab-list-title"><h3>Tracks</h3><button class="ab-add" id="ab-add-track" type="button">+ Track hinzufügen</button></div><p class="ab-field-hint ab-link-guidance">Prüfe deinen Link vor der Bestellung: Kopiere die Adresse und öffne sie in einem neuen Browser-Tab.</p><div id="ab-tracks" class="ab-list"></div></div>
                   <div class="ab-list-section"><div class="ab-list-title"><h3>Gigs</h3><button class="ab-add" id="ab-add-gig" type="button">+ Gig hinzufügen</button></div><div class="ab-fields-grid"><label class="ab-field ab-field-wide">Überschrift für Gigs<input name="gigsHeading" maxlength="40"></label><div id="ab-gigs" class="ab-list ab-field-wide"></div></div></div>
                 </section>
 
                 <section class="ab-card">
                   <div class="ab-card-heading"><span>03</span><div><h2>Links &amp; Booking</h2><p>Wo man deine Musik und dich findet.</p></div></div>
+                  <p class="ab-field-hint ab-link-guidance">Prüfe deine Weblinks vor der Bestellung: Kopiere die Adresse und öffne sie in einem neuen Browser-Tab. Deine Booking-E-Mail kannst du hier ebenfalls kopieren.</p>
                   <div class="ab-fields-grid">
-                    <label class="ab-field">Spotify<input name="spotify" type="url" maxlength="2048" placeholder="https://"></label>
-                    <label class="ab-field">SoundCloud<input name="soundcloud" type="url" maxlength="2048" placeholder="https://"></label>
-                    <label class="ab-field">Bandcamp<input name="bandcamp" type="url" maxlength="2048" placeholder="https://"></label>
-                    <label class="ab-field">Instagram<input name="instagram" type="url" maxlength="2048" placeholder="https://"></label>
-                    <label class="ab-field ab-field-wide">Booking-E-Mail<input name="email" type="email" maxlength="254" autocomplete="email"></label>
+                    <div class="ab-link-field"><label class="ab-field">Spotify<input name="spotify" type="url" maxlength="2048" placeholder="https://"></label><div class="ab-link-control" data-link-control data-kind="url"><output class="ab-link-value" data-link-value></output><button class="ab-link-copy" type="button" data-copy-link>Link kopieren</button><span class="ab-link-copy-status" data-link-status role="status" aria-live="polite"></span></div></div>
+                    <div class="ab-link-field"><label class="ab-field">SoundCloud<input name="soundcloud" type="url" maxlength="2048" placeholder="https://"></label><div class="ab-link-control" data-link-control data-kind="url"><output class="ab-link-value" data-link-value></output><button class="ab-link-copy" type="button" data-copy-link>Link kopieren</button><span class="ab-link-copy-status" data-link-status role="status" aria-live="polite"></span></div></div>
+                    <div class="ab-link-field"><label class="ab-field">Bandcamp<input name="bandcamp" type="url" maxlength="2048" placeholder="https://"></label><div class="ab-link-control" data-link-control data-kind="url"><output class="ab-link-value" data-link-value></output><button class="ab-link-copy" type="button" data-copy-link>Link kopieren</button><span class="ab-link-copy-status" data-link-status role="status" aria-live="polite"></span></div></div>
+                    <div class="ab-link-field"><label class="ab-field">Instagram<input name="instagram" type="url" maxlength="2048" placeholder="https://"></label><div class="ab-link-control" data-link-control data-kind="url"><output class="ab-link-value" data-link-value></output><button class="ab-link-copy" type="button" data-copy-link>Link kopieren</button><span class="ab-link-copy-status" data-link-status role="status" aria-live="polite"></span></div></div>
+                    <div class="ab-link-field ab-field-wide"><label class="ab-field">Booking-E-Mail<input name="email" type="email" maxlength="254" autocomplete="email"></label><div class="ab-link-control" data-link-control data-kind="email"><output class="ab-link-value" data-link-value></output><button class="ab-link-copy" type="button" data-copy-link>Link kopieren</button><span class="ab-link-copy-status" data-link-status role="status" aria-live="polite"></span></div></div>
                   </div>
                 </section>
                 <section class="ab-card" id="ab-legal">
@@ -356,7 +367,7 @@ export function renderArtistBandBuilder(app) {
         </div>
       </main>
       <footer class="ab-footer">
-        <span>© ${new Date().getFullYear()} LeanWebsite</span>
+        <span>© ${new Date().getFullYear()} LeanWebsite Studio</span>
         <nav class="ab-footer-links" aria-label="Rechtliche Informationen">
           <a href="/datenschutz">Datenschutzerklärung</a>
           <a href="/widerruf">Widerruf</a>
@@ -593,7 +604,29 @@ export function renderArtistBandBuilder(app) {
         renderList(key)
         markChanged()
       })
-      row.append(first, second, remove)
+      if (key === 'tracks') {
+        const linkControl = document.createElement('div')
+        linkControl.className = 'ab-link-control ab-track-link-control'
+        linkControl.dataset.linkControl = ''
+        linkControl.dataset.kind = 'url'
+        const address = document.createElement('output')
+        address.className = 'ab-link-value'
+        address.dataset.linkValue = ''
+        const copy = document.createElement('button')
+        copy.type = 'button'
+        copy.className = 'ab-link-copy'
+        copy.dataset.copyLink = ''
+        copy.textContent = 'Link kopieren'
+        const copyStatus = document.createElement('span')
+        copyStatus.className = 'ab-link-copy-status'
+        copyStatus.dataset.linkStatus = ''
+        copyStatus.setAttribute('role', 'status')
+        copyStatus.setAttribute('aria-live', 'polite')
+        linkControl.append(second, address, copy, copyStatus)
+        row.append(first, linkControl, remove)
+      } else {
+        row.append(first, second, remove)
+      }
       list.append(row)
     })
   }
@@ -785,6 +818,31 @@ export function renderArtistBandBuilder(app) {
   })
 
   form.addEventListener('submit', (event) => event.preventDefault())
+
+  form.addEventListener('input', (event) => {
+    const control = event.target.closest('[data-link-control]')
+      ?? event.target.closest('.ab-link-field')?.querySelector('[data-link-control]')
+    const address = control?.querySelector('[data-link-value]')
+    if (address) address.textContent = event.target.value
+  })
+
+  form.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('button[data-copy-link]')
+    if (!button) return
+
+    event.preventDefault()
+    const control = button.closest('[data-link-control]')
+    const input = control.querySelector('input') ?? control.parentElement.querySelector('input')
+    const output = control.querySelector('[data-link-value]')
+    const status = control.querySelector('[data-link-status]')
+    const value = input.value
+
+    output.textContent = value
+    status.textContent = ''
+    const result = await copyArtistBandLink(value, control.dataset.kind, globalThis.navigator?.clipboard)
+    status.textContent = result.message
+    status.dataset.kind = result.success ? 'success' : 'error'
+  })
 
   packageBox.addEventListener('change', updateSelectedPackage)
   fulfillmentForm.addEventListener('change', (event) => {

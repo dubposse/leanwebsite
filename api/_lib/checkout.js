@@ -304,6 +304,8 @@ async function ensureSession({ sql, stripe, siteUrl, draft, pkg }, order) {
         mode: 'payment',
         locale: 'de',
         customer_creation: 'always',
+        invoice_creation: { enabled: true },
+        billing_address_collection: 'required',
         name_collection: {
           individual: { enabled: true, optional: false },
           business: { enabled: true, optional: true },

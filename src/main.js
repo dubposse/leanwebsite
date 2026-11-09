@@ -24,7 +24,7 @@ app.innerHTML = `
   <header class="site-header">
     <a class="brand" href="/" aria-label="LeanWebsite Startseite">
       <span class="brand-mark" aria-hidden="true">L</span>
-      <span>LeanWebsite</span>
+      <span>LeanWebsite Studio</span>
     </a>
     <a class="header-link" href="#builder">Builder entdecken <span aria-hidden="true">↘</span></a>
   </header>
@@ -85,7 +85,7 @@ app.innerHTML = `
   <footer class="site-footer">
     <a class="brand footer-brand" href="/" aria-label="LeanWebsite Startseite">
       <span class="brand-mark" aria-hidden="true">L</span>
-      <span>LeanWebsite</span>
+      <span>LeanWebsite Studio</span>
     </a>
     <p>Ein guter Anfang für deinen Webauftritt.</p>
     <nav class="site-footer-links" aria-label="Rechtliche Informationen">

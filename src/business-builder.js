@@ -456,7 +456,7 @@ export function renderBusinessBuilder(app) {
       <header class="topbar">
         <a class="brand" href="/" aria-label="LeanWebsite Startseite">
           <span class="brand-dot" aria-hidden="true"></span>
-          <span>LeanWebsite <small>Business-Builder</small></span>
+          <span>LeanWebsite Studio <small>Business-Builder</small></span>
         </a>
         <div class="topbar-actions">
           <span class="draft-status" id="draft-status" role="status" aria-live="polite" data-state="pending">Nicht gespeichert</span>
@@ -569,7 +569,7 @@ export function renderBusinessBuilder(app) {
 
             <div class="step" data-step="Fertig">
               <h2>Fast geschafft</h2>
-              <p class="hint">Für das Impressum (Pflicht in Deutschland). Rechtstexte prüfe ich gern mit euch.</p>
+              <p class="hint">Für das Impressum (Pflicht in Deutschland).</p>
               <label>Inhaber / Geschäftsführung<input data-bind="legal.owner" maxlength="200" placeholder="Max Mustermann"></label>
               <label>USt-IdNr. (falls vorhanden)<input data-bind="legal.vat" maxlength="32" placeholder="DE123456789"></label>
               <label>Eure Domain (bleibt bestehen)<input data-bind="legal.domain" maxlength="253" placeholder="www.eure-firma.de"></label>

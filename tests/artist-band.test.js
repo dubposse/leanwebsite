@@ -534,7 +534,9 @@ describe('builder generators', () => {
 
     assert.deepEqual(first, second)
     assert.match(first.toString(), /^<!DOCTYPE html>/)
-    assert.match(first.toString(), /© 2042 DJ Nova · erstellt mit LeanWebsite/)
+    assert.match(first.toString(), /© 2042 DJ Nova<nav class="legal-links"/)
+    assert.doesNotMatch(first.toString(), /erstellt mit LeanWebsite/)
+    assert.match(first.toString(), /<a href="#impressum">Impressum<\/a><a href="#datenschutz">Datenschutz<\/a>/)
     assert.ok(!first.toString().includes('possebeats.de'))
     assert.notDeepEqual(first, renderWebsite(defaultGenerators, 'artist-band', json, 2043))
   })
@@ -589,7 +591,9 @@ describe('builder generators', () => {
     const snapshot = storage.objects.get(order.snapshot_key)
     assert.match(url, /^https:\/\/checkout\.stripe\.com\//)
     assert.equal(order.snapshot_content_type, 'text/html')
-    assert.match(snapshot.body.toString(), /© 2042 DJ Nova · erstellt mit LeanWebsite/)
+    assert.match(snapshot.body.toString(), /© 2042 DJ Nova<nav class="legal-links"/)
+    assert.doesNotMatch(snapshot.body.toString(), /erstellt mit LeanWebsite/)
+    assert.match(snapshot.body.toString(), /<a href="#impressum">Impressum<\/a><a href="#datenschutz">Datenschutz<\/a>/)
     assert.match(snapshot.body.toString(), /data-content-font="claim" data-content-color="accent"/)
     assert.equal(stripe.createCalls, 1)
 
