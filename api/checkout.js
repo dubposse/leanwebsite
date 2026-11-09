@@ -42,11 +42,17 @@ export function createCheckoutHandler({
       const request = parseCheckoutRequest(body)
 
       let dependencies
+      let failedStep = 'getDb'
 
       try {
-        dependencies = { sql: getDb(), stripe: getStripeClient(), siteUrl: resolveSiteUrl() }
+        const sql = getDb()
+        failedStep = 'getStripeClient'
+        const stripe = getStripeClient()
+        failedStep = 'resolveSiteUrl'
+        const siteUrl = resolveSiteUrl()
+        dependencies = { sql, stripe, siteUrl }
       } catch {
-        console.error('checkout is not configured')
+        console.error(`checkout is not configured: ${failedStep} failed`)
         throw new CheckoutError(500, 'Checkout is not available')
       }
 
