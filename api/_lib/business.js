@@ -1,4 +1,5 @@
 import jpeg from 'jpeg-js'
+import { isValidPng } from './png.js'
 import { generateBusinessHtml } from '../../shared/business-template.js'
 import { businessOperatorErrors, BUSINESS_OPERATOR_CHOICES, BUSINESS_OPERATOR_DEFAULTS, BUSINESS_OPERATOR_LIMITS } from '../../shared/business-operator.js'
 
@@ -46,7 +47,7 @@ const FIELD_LIMITS = Object.freeze({
 })
 
 const DATA_KEYS = Object.freeze([...Object.keys(DEFAULT_DATA), 'operator'])
-const DATA_IMAGE_URL = /^data:image\/(jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/
+const DATA_IMAGE_URL = /^data:image\/(jpeg|webp|png);base64,([A-Za-z0-9+/]+={0,2})$/
 const INVALID_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
 
 function isPlainObject(value) {
@@ -186,11 +187,11 @@ function webpDimensions(bytes) {
   return canvas ?? frame
 }
 
-function validateImage(value, BuilderValidationError, maxBytes) {
+function validateImage(value, BuilderValidationError, maxBytes, { logo = false } = {}) {
   if (value === '') return { value, bytes: 0 }
 
   const match = typeof value === 'string' && DATA_IMAGE_URL.exec(value)
-  if (!match) invalid(BuilderValidationError, 'Invalid image')
+  if (!match || (match[1] === 'png' && !logo)) invalid(BuilderValidationError, 'Invalid image')
 
   const bytes = Buffer.from(match[2], 'base64')
   if (
@@ -201,7 +202,8 @@ function validateImage(value, BuilderValidationError, maxBytes) {
     invalid(BuilderValidationError, 'Image is invalid or too large')
   }
 
-  const valid = match[1] === 'jpeg'
+  const valid = match[1] === 'png' ? isValidPng(bytes, MAX_IMAGE_PIXELS)
+    : match[1] === 'jpeg'
     ? decodesAsJpeg(bytes)
     : (() => {
         const dimensions = webpDimensions(bytes)
@@ -314,7 +316,7 @@ export function validateBusinessData(input, BuilderValidationError, maxImageByte
     images.push([`gallery.${index}`, data.gallery[index]])
   }
   for (const [path, value] of images) {
-    const image = validateImage(value, BuilderValidationError, maxImageBytes)
+    const image = validateImage(value, BuilderValidationError, maxImageBytes, { logo: path === 'logo' })
     imageBytes += image.bytes
     if (path === 'logo') data.logo = image.value
     else if (path === 'hero.image') data.hero.image = image.value

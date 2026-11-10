@@ -110,6 +110,8 @@ SELECT id, type, order_id, outcome, review_reason, received_at FROM stripe_event
 
 Der Builder legt erst beim ersten Speichern oder Checkout einen Entwurf an. Die Entwurfs-ID und das Zugriffstoken werden lokal im Browser gespeichert; Formularinhalte werden beim Speichern an die LeanWebsite-API übertragen und im privaten R2-Bucket gehalten. Die Vorschau bleibt in einem sandboxed iframe. Beim Checkout übermittelt der Browser nur den serverseitigen Paketcode, niemals einen Preis; Stripe- und R2-Zugangsdaten bleiben serverseitig.
 
+Der Business-Builder verarbeitet Logos bevorzugt als WebP und bei fehlender Canvas-WebP-Kodierung als PNG, damit Transparenz erhalten bleibt. PNG ist nur für Logos zulässig; die übrigen Business-Bilder bleiben JPEG oder WebP. Es gelten weiterhin 1,5 MiB pro Bild und 4 MiB pro Draft-Anfrage.
+
 Der Checkout liest den Entwurf einmal, validiert erneut, erzeugt daraus das HTML und legt **dieses HTML** (`text/html`) als unveränderlichen Snapshot ab. HTML aus dem Browser wird nie übernommen. Migration 0004 ist nicht nötig.
 
 ## Umgebungsvariablen

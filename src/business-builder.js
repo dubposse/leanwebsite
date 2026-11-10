@@ -11,6 +11,7 @@ import { getPackagesForBuilder } from '../shared/packages.js'
 import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { setupBusinessMobileView } from './business-mobile-view.js'
 import { wireBusinessSingleImage } from './business-single-image.js'
+import { encodeBusinessLogo, imageByteLength, isImageDataUrl } from './business-image.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
   BusinessFulfillmentValidationError,
@@ -84,7 +85,6 @@ const PALETTES = [
 ]
 
 const SINGLE_IMAGE_PATHS = ['logo', 'hero.image', 'about.image']
-const IMAGE_DATA_URL = /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const DRAFT_TOKEN = /^[A-Za-z0-9_-]{43}$/
 
@@ -98,29 +98,11 @@ const SECTION_FIELDS = {
   operator: Object.keys(BUSINESS_OPERATOR_DEFAULTS),
 }
 
-function isImageDataUrl(value) {
-  if (value === '') return true
-  if (typeof value !== 'string' || !IMAGE_DATA_URL.test(value)) return false
-  const payload = value.slice(value.indexOf(',') + 1)
-  if (!payload.length || payload.length % 4 !== 0) return false
-  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
-  const last = payload.charCodeAt(payload.length - padding - 1)
-  const lastValue = last >= 65 && last <= 90 ? last - 65
-    : last >= 97 && last <= 122 ? last - 71
-      : last >= 48 && last <= 57 ? last + 4
-        : last === 43 ? 62
-          : last === 47 ? 63
-            : -1
-  return lastValue >= 0
-    && (padding !== 2 || lastValue % 16 === 0)
-    && (padding !== 1 || lastValue % 4 === 0)
-}
-
 function isBusinessDataStructure(value, { serverData = false } = {}) {
   if (!isObject(value)) return false
   const known = new Set([...Object.keys(SECTION_FIELDS), 'logo', 'services', 'facts', 'gallery'])
   if (Object.keys(value).some((key) => !known.has(key))) return false
-  if (value.logo !== undefined && !isImageDataUrl(value.logo)) return false
+  if (value.logo !== undefined && !isImageDataUrl(value.logo, { logo: true })) return false
 
   for (const [section, fields] of Object.entries(SECTION_FIELDS)) {
     const data = value[section]
@@ -248,7 +230,7 @@ function normalizeState(value) {
   const saved = isObject(value) ? value : {}
   const data = {
     company: mergeSection(DEFAULT_DATA.company, saved.company),
-    logo: typeof saved.logo === 'string' && IMAGE_DATA_URL.test(saved.logo) ? saved.logo : '',
+    logo: isImageDataUrl(saved.logo, { logo: true }) ? saved.logo : '',
     hero: mergeSection(DEFAULT_DATA.hero, saved.hero),
     services: Array.isArray(saved.services)
       ? saved.services.filter(isObject).map((item) => ({
@@ -265,7 +247,7 @@ function normalizeState(value) {
         }))
       : [],
     gallery: Array.isArray(saved.gallery)
-      ? saved.gallery.filter((image) => typeof image === 'string' && IMAGE_DATA_URL.test(image))
+      ? saved.gallery.filter((image) => image && isImageDataUrl(image))
       : [],
     contact: mergeSection(DEFAULT_DATA.contact, saved.contact),
     design: mergeSection(DEFAULT_DATA.design, saved.design),
@@ -275,7 +257,7 @@ function normalizeState(value) {
 
   for (const path of ['hero.image', 'about.image']) {
     const [section, key] = path.split('.')
-    if (!IMAGE_DATA_URL.test(data[section][key])) data[section][key] = ''
+    if (!isImageDataUrl(data[section][key])) data[section][key] = ''
   }
 
   return data
@@ -325,25 +307,6 @@ function loadGsap() {
   })
 
   return window.businessGsapPromise
-}
-
-function imageByteLength(value) {
-  const match = typeof value === 'string' && IMAGE_DATA_URL.exec(value)
-  if (!match) return null
-  const payload = value.slice(value.indexOf(',') + 1)
-  if (payload.length % 4 !== 0) return null
-  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
-  const last = payload.charCodeAt(payload.length - padding - 1)
-  const lastValue = last >= 65 && last <= 90 ? last - 65
-    : last >= 97 && last <= 122 ? last - 71
-      : last >= 48 && last <= 57 ? last + 4
-        : last === 43 ? 62
-          : last === 47 ? 63
-            : -1
-  if (lastValue < 0 || (padding === 2 && lastValue % 16 !== 0) || (padding === 1 && lastValue % 4 !== 0)) {
-    return null
-  }
-  return Math.floor(payload.length * 3 / 4) - padding
 }
 
 function draftRequestBytes(data) {
@@ -437,7 +400,7 @@ function validationWarnings(data) {
   if (!['4', '16', '28'].includes(data.design.radius)) warnings.push('Bitte eine der vorhandenen Rundungsoptionen auswählen.')
 
   for (const [label, image] of imageEntries(data)) {
-    const bytes = imageByteLength(image)
+    const bytes = imageByteLength(image, { logo: label === 'Logo' })
     if (image && bytes === null) warnings.push(`${label}: ungültiges Bildformat.`)
     else if (bytes > MAX_IMAGE_BYTES) warnings.push(`${label}: maximal 1,5 MiB Bildgröße.`)
   }
@@ -1533,6 +1496,13 @@ export function renderBusinessBuilder(app) {
             context.fillRect(0, 0, canvas.width, canvas.height)
           }
           context.drawImage(image, 0, 0, canvas.width, canvas.height)
+          if (keepAlpha) {
+            resolve(encodeBusinessLogo(canvas, image, {
+              maxImageBytes: MAX_IMAGE_BYTES,
+              fitsDraft: (value) => draftRequestBytes(withImage(data, path, value)) <= MAX_DRAFT_REQUEST_BYTES,
+            }))
+            return
+          }
           const format = keepAlpha ? 'image/webp' : 'image/jpeg'
           const qualities = keepAlpha ? [0.9, 0.82, 0.72, 0.62] : [0.82, 0.74, 0.66, 0.58]
           let lastIssue = 'image'
@@ -1558,8 +1528,8 @@ export function renderBusinessBuilder(app) {
           reject(new Error(lastIssue === 'image'
             ? 'Das Bild ist auch nach zusätzlicher Komprimierung größer als 1,5 MiB. Bitte wähle ein kleineres Bild.'
             : 'Das Bild passt auch nach zusätzlicher Komprimierung nicht in das Draft-Limit von 4 MiB. Entferne oder verkleinere zuerst andere Bilder.'))
-        } catch {
-          reject(new Error('Bild konnte nicht verarbeitet werden.'))
+        } catch (error) {
+          reject(keepAlpha && error instanceof Error ? error : new Error('Bild konnte nicht verarbeitet werden.'))
         }
       }
       image.onerror = () => {
