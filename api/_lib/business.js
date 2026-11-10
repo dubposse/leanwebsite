@@ -187,11 +187,11 @@ function webpDimensions(bytes) {
   return canvas ?? frame
 }
 
-function validateImage(value, BuilderValidationError, maxBytes, { logo = false } = {}) {
+function validateImage(value, BuilderValidationError, maxBytes, { allowPng = false } = {}) {
   if (value === '') return { value, bytes: 0 }
 
   const match = typeof value === 'string' && DATA_IMAGE_URL.exec(value)
-  if (!match || (match[1] === 'png' && !logo)) invalid(BuilderValidationError, 'Invalid image')
+  if (!match || (match[1] === 'png' && !allowPng)) invalid(BuilderValidationError, 'Invalid image')
 
   const bytes = Buffer.from(match[2], 'base64')
   if (
@@ -316,7 +316,7 @@ export function validateBusinessData(input, BuilderValidationError, maxImageByte
     images.push([`gallery.${index}`, data.gallery[index]])
   }
   for (const [path, value] of images) {
-    const image = validateImage(value, BuilderValidationError, maxImageBytes, { logo: path === 'logo' })
+    const image = validateImage(value, BuilderValidationError, maxImageBytes, { allowPng: path === 'logo' || path === 'hero.image' })
     imageBytes += image.bytes
     if (path === 'logo') data.logo = image.value
     else if (path === 'hero.image') data.hero.image = image.value

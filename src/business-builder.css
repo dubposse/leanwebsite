@@ -769,6 +769,43 @@
   color: #fca5a5;
 }
 
+#app.business-builder .hero-image-help {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+#app.business-builder .hero-image-help summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--b);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#app.business-builder .hero-image-help summary::-webkit-details-marker {
+  display: none;
+}
+
+#app.business-builder .hero-image-help summary::before {
+  content: '▸';
+  margin-right: 8px;
+}
+
+#app.business-builder .hero-image-help[open] summary::before {
+  content: '▾';
+}
+
+#app.business-builder .hero-image-help summary:focus-visible {
+  outline: 2px solid var(--b);
+  outline-offset: 3px;
+}
+
+#app.business-builder .hero-image-help p {
+  margin: 0 0 8px;
+}
+
 #app.business-builder .list {
   display: grid;
   gap: 10px;

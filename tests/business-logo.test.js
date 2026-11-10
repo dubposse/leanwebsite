@@ -119,13 +119,14 @@ describe('business logo PNG fallback', () => {
     assert.equal(Buffer.byteLength(JSON.stringify({ logo: atLimit, other: otherData + 'x' })), draftLimit + 1)
   })
 
-  it('accepts PNG only for the logo and rejects malformed or unsafe PNG data', () => {
+  it('accepts PNG for logos and title images and rejects malformed or unsafe PNG data', () => {
     assert.equal(isImageDataUrl(PNG, { logo: true }), true)
     assert.equal(isImageDataUrl(PNG), false)
     assert.equal(imageByteLength(PNG, { logo: true }), png().length)
     assert.equal(validate({ logo: PNG }).logo, PNG)
     assert.equal(validate({ logo: CANVAS_PNG }).logo, CANVAS_PNG)
-    for (const data of [{ hero: { image: PNG } }, { about: { image: PNG } }, { gallery: [PNG] }]) {
+    assert.equal(validate({ hero: { image: PNG } }).hero.image, PNG)
+    for (const data of [{ about: { image: PNG } }, { gallery: [PNG] }]) {
       assert.throws(() => validate(data), { statusCode: 422 })
     }
     const corrupt = png()

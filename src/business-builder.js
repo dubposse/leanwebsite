@@ -11,7 +11,7 @@ import { getPackagesForBuilder } from '../shared/packages.js'
 import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { setupBusinessMobileView } from './business-mobile-view.js'
 import { wireBusinessSingleImage } from './business-single-image.js'
-import { encodeBusinessLogo, imageByteLength, isImageDataUrl } from './business-image.js'
+import { encodeBusinessLogo, hasImageTransparency, imageByteLength, isImageDataUrl } from './business-image.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
   BusinessFulfillmentValidationError,
@@ -113,7 +113,7 @@ function isBusinessDataStructure(value, { serverData = false } = {}) {
       if (section === 'operator' && (fieldValue.length > BUSINESS_OPERATOR_LIMITS[field]
         || INVALID_CONTROL_CHARACTERS.test(fieldValue)
         || (Object.hasOwn(BUSINESS_OPERATOR_CHOICES, field) && !BUSINESS_OPERATOR_CHOICES[field].includes(fieldValue)))) return false
-      if (field === 'image' && !isImageDataUrl(fieldValue)) return false
+      if (field === 'image' && !isImageDataUrl(fieldValue, { hero: section === 'hero' })) return false
     }
   }
 
@@ -257,7 +257,7 @@ function normalizeState(value) {
 
   for (const path of ['hero.image', 'about.image']) {
     const [section, key] = path.split('.')
-    if (!isImageDataUrl(data[section][key])) data[section][key] = ''
+    if (!isImageDataUrl(data[section][key], { hero: section === 'hero' })) data[section][key] = ''
   }
 
   return data
@@ -400,7 +400,7 @@ function validationWarnings(data) {
   if (!['4', '16', '28'].includes(data.design.radius)) warnings.push('Bitte eine der vorhandenen Rundungsoptionen auswählen.')
 
   for (const [label, image] of imageEntries(data)) {
-    const bytes = imageByteLength(image, { logo: label === 'Logo' })
+    const bytes = imageByteLength(image, { logo: label === 'Logo', hero: label === 'Titelbild' })
     if (image && bytes === null) warnings.push(`${label}: ungültiges Bildformat.`)
     else if (bytes > MAX_IMAGE_BYTES) warnings.push(`${label}: maximal 1,5 MiB Bildgröße.`)
   }
@@ -471,6 +471,15 @@ export function renderBusinessBuilder(app) {
                   <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-hero-image" type="file" accept="image/*" aria-label="Titelbild auswählen oder hier ablegen" aria-describedby="business-hero-image-status">
                 </div>
                 <p class="image-status" id="business-hero-image-status" role="status" aria-live="polite"></p>
+                <details class="hero-image-help">
+                  <summary>Tipps für dein Titelbild</summary>
+                  <div>
+                    <p>Verwende möglichst ein hochauflösendes Querformat, beispielsweise 1920 × 1080 Pixel. Platziere wichtige Motive möglichst mittig und lasse ausreichend Abstand zu den Bildrändern.</p>
+                    <p>Je nach Bildschirmgröße kann sich der sichtbare Bildausschnitt verändern.</p>
+                    <p>Tipp: Verkleinere dein Browserfenster am Computer, um unterschiedliche Bildschirmbreiten zu prüfen. Alternativ kannst du die Darstellung auf deinem Smartphone kontrollieren.</p>
+                    <p>Bearbeite und bestelle deine Website möglichst auf demselben Gerät, damit dein gespeicherter Entwurf eindeutig zugeordnet bleibt.</p>
+                  </div>
+                </details>
               </div>
             </div>
 
@@ -1482,8 +1491,9 @@ export function renderBusinessBuilder(app) {
       image.onload = () => {
         URL.revokeObjectURL(url)
         try {
-          const scale = Math.min(1, maxDimension / Math.max(image.width, image.height))
           const canvas = document.createElement('canvas')
+          const preserveAlpha = keepAlpha || (path === 'hero.image' && hasImageTransparency(image, canvas))
+          const scale = Math.min(1, maxDimension / Math.max(image.width, image.height))
           canvas.width = Math.max(1, Math.round(image.width * scale))
           canvas.height = Math.max(1, Math.round(image.height * scale))
           const context = canvas.getContext('2d')
@@ -1491,15 +1501,16 @@ export function renderBusinessBuilder(app) {
             reject(new Error('Die Bildverarbeitung ist in diesem Browser nicht verfügbar.'))
             return
           }
-          if (!keepAlpha) {
+          if (!preserveAlpha) {
             context.fillStyle = '#fff'
             context.fillRect(0, 0, canvas.width, canvas.height)
           }
           context.drawImage(image, 0, 0, canvas.width, canvas.height)
-          if (keepAlpha) {
+          if (preserveAlpha) {
             resolve(encodeBusinessLogo(canvas, image, {
               maxImageBytes: MAX_IMAGE_BYTES,
               fitsDraft: (value) => draftRequestBytes(withImage(data, path, value)) <= MAX_DRAFT_REQUEST_BYTES,
+              ...(path === 'hero.image' && { label: 'Titelbild' }),
             }))
             return
           }
@@ -1529,7 +1540,7 @@ export function renderBusinessBuilder(app) {
             ? 'Das Bild ist auch nach zusätzlicher Komprimierung größer als 1,5 MiB. Bitte wähle ein kleineres Bild.'
             : 'Das Bild passt auch nach zusätzlicher Komprimierung nicht in das Draft-Limit von 4 MiB. Entferne oder verkleinere zuerst andere Bilder.'))
         } catch (error) {
-          reject(keepAlpha && error instanceof Error ? error : new Error('Bild konnte nicht verarbeitet werden.'))
+          reject((keepAlpha || path === 'hero.image') && error instanceof Error ? error : new Error('Bild konnte nicht verarbeitet werden.'))
         }
       }
       image.onerror = () => {

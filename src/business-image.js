@@ -1,8 +1,8 @@
 const IMAGE_DATA_URL = /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
 const LOGO_DATA_URL = /^data:image\/(?:jpeg|webp|png);base64,[A-Za-z0-9+/]+={0,2}$/
 
-export function imageByteLength(value, { logo = false } = {}) {
-  if (typeof value !== 'string' || !(logo ? LOGO_DATA_URL : IMAGE_DATA_URL).test(value)) return null
+export function imageByteLength(value, { logo = false, hero = false } = {}) {
+  if (typeof value !== 'string' || !(logo || hero ? LOGO_DATA_URL : IMAGE_DATA_URL).test(value)) return null
   const payload = value.slice(value.indexOf(',') + 1)
   if (payload.length % 4 !== 0) return null
   const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
@@ -21,10 +21,37 @@ export function isImageDataUrl(value, options) {
   return value === '' || imageByteLength(value, options) !== null
 }
 
-export function encodeBusinessLogo(canvas, image, { maxImageBytes, fitsDraft }) {
+export function hasImageTransparency(image, canvas) {
+  if (!image.width || !image.height) throw new Error('Das Titelbild konnte nicht gelesen werden. Bitte wähle ein anderes Bild.')
+  const tileSize = 512
+  canvas.width = Math.min(tileSize, image.width)
+  canvas.height = Math.min(tileSize, image.height)
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('Die Bildverarbeitung ist in diesem Browser nicht verfügbar.')
+  for (let y = 0; y < image.height; y += tileSize) {
+    for (let x = 0; x < image.width; x += tileSize) {
+      const width = Math.min(tileSize, image.width - x)
+      const height = Math.min(tileSize, image.height - y)
+      let pixels
+      try {
+        context.clearRect(0, 0, width, height)
+        context.drawImage(image, x, y, width, height, 0, 0, width, height)
+        pixels = context.getImageData(0, 0, width, height).data
+      } catch {
+        throw new Error('Die Transparenz des Titelbilds konnte nicht geprüft werden. Bitte wähle ein anderes Bild.')
+      }
+      for (let alpha = 3; alpha < pixels.length; alpha += 4) {
+        if (pixels[alpha] !== 255) return true
+      }
+    }
+  }
+  return false
+}
+
+export function encodeBusinessLogo(canvas, image, { maxImageBytes, fitsDraft, label = 'Logo' }) {
   const check = (value) => {
     const bytes = imageByteLength(value, { logo: true })
-    if (bytes === null) throw new Error('Das Logo konnte nicht als Bild gespeichert werden. Bitte wähle ein anderes Bild.')
+    if (bytes === null) throw new Error(`Das ${label} konnte nicht als Bild gespeichert werden. Bitte wähle ein anderes Bild.`)
     if (bytes > maxImageBytes) return 'image'
     if (!fitsDraft(value)) return 'request'
     return ''
@@ -57,14 +84,14 @@ export function encodeBusinessLogo(canvas, image, { maxImageBytes, fitsDraft }) 
     try {
       png = canvas.toDataURL('image/png')
     } catch {
-      throw new Error('Das Logo konnte nicht als PNG gespeichert werden. Bitte wähle ein anderes Bild.')
+      throw new Error(`Das ${label} konnte nicht als PNG gespeichert werden. Bitte wähle ein anderes Bild.`)
     }
   }
   const initialWidth = canvas.width
   const initialHeight = canvas.height
   for (let attempt = 0; attempt < 8; attempt += 1) {
     if (!png.startsWith('data:image/png;base64,')) {
-      throw new Error('Das Logo konnte nicht als PNG gespeichert werden. Bitte wähle ein anderes Bild.')
+      throw new Error(`Das ${label} konnte nicht als PNG gespeichert werden. Bitte wähle ein anderes Bild.`)
     }
     issue = check(png)
     if (!issue) return png
@@ -81,10 +108,10 @@ export function encodeBusinessLogo(canvas, image, { maxImageBytes, fitsDraft }) 
     try {
       png = canvas.toDataURL('image/png')
     } catch {
-      throw new Error('Das Logo konnte nicht als PNG gespeichert werden. Bitte wähle ein anderes Bild.')
+      throw new Error(`Das ${label} konnte nicht als PNG gespeichert werden. Bitte wähle ein anderes Bild.`)
     }
   }
   throw new Error(issue === 'request'
-    ? 'Das Logo passt auch nach dem Verkleinern nicht in das Draft-Limit von 4 MiB. Entferne oder verkleinere zuerst andere Bilder.'
-    : 'Das Logo ist auch nach dem Verkleinern größer als 1,5 MiB. Bitte wähle ein kleineres Bild.')
+    ? `Das ${label} passt auch nach dem Verkleinern nicht in das Draft-Limit von 4 MiB. Entferne oder verkleinere zuerst andere Bilder.`
+    : `Das ${label} ist auch nach dem Verkleinern größer als 1,5 MiB. Bitte wähle ein kleineres Bild.`)
 }
