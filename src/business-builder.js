@@ -10,6 +10,7 @@ import {
 import { getPackagesForBuilder } from '../shared/packages.js'
 import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { setupBusinessMobileView } from './business-mobile-view.js'
+import { wireBusinessSingleImage } from './business-single-image.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
   BusinessFulfillmentValidationError,
@@ -483,11 +484,13 @@ export function renderBusinessBuilder(app) {
               <label>Firmenname *<input data-bind="company.name" maxlength="100" placeholder="z. B. Müller Fahrradwerkstatt"></label>
               <label>Slogan<input data-bind="company.tagline" maxlength="180" placeholder="z. B. Dein Bike. Unsere Leidenschaft."></label>
               <label>Branche<input data-bind="company.industry" maxlength="120" placeholder="z. B. Fahrrad-Service"></label>
-              <label>Logo (optional)
-                <div class="drop" data-img="logo" data-max="500" tabindex="0" role="button" aria-label="Logo auswählen oder hier ablegen">
-                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input type="file" accept="image/*" hidden>
+              <div class="image-field">
+                <label for="business-logo">Logo (optional)</label>
+                <div class="drop" data-img="logo" data-max="500">
+                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-logo" type="file" accept="image/*" aria-label="Logo auswählen oder hier ablegen" aria-describedby="business-logo-status">
                 </div>
-              </label>
+                <p class="image-status" id="business-logo-status" role="status" aria-live="polite"></p>
+              </div>
             </div>
 
             <div class="step" data-step="Start">
@@ -499,11 +502,13 @@ export function renderBusinessBuilder(app) {
                 <label>Button-Text<input data-bind="hero.cta" maxlength="100" placeholder="Jetzt anfragen"></label>
                 <label>Badge (optional)<input data-bind="hero.badge" maxlength="120" placeholder="Seit 2009 in Berlin"></label>
               </div>
-              <label>Titelbild
-                <div class="drop" data-img="hero.image" data-max="1800" tabindex="0" role="button" aria-label="Titelbild auswählen oder hier ablegen">
-                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input type="file" accept="image/*" hidden>
+              <div class="image-field">
+                <label for="business-hero-image">Titelbild</label>
+                <div class="drop" data-img="hero.image" data-max="1800">
+                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-hero-image" type="file" accept="image/*" aria-label="Titelbild auswählen oder hier ablegen" aria-describedby="business-hero-image-status">
                 </div>
-              </label>
+                <p class="image-status" id="business-hero-image-status" role="status" aria-live="polite"></p>
+              </div>
             </div>
 
             <div class="step" data-step="Leistungen">
@@ -518,11 +523,13 @@ export function renderBusinessBuilder(app) {
               <p class="hint">Erzählt eure Geschichte und nennt ein paar Zahlen.</p>
               <label>Titel<input data-bind="about.title" maxlength="120" placeholder="Handwerk mit Herz"></label>
               <label>Text<textarea rows="5" maxlength="5000" data-bind="about.text" placeholder="Wer seid ihr, wofür steht ihr?"></textarea></label>
-              <label>Bild
-                <div class="drop" data-img="about.image" data-max="1400" tabindex="0" role="button" aria-label="Bild auswählen oder hier ablegen">
-                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input type="file" accept="image/*" hidden>
+              <div class="image-field">
+                <label for="business-about-image">Bild</label>
+                <div class="drop" data-img="about.image" data-max="1400">
+                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-about-image" type="file" accept="image/*" aria-label="Über-uns-Bild auswählen oder hier ablegen" aria-describedby="business-about-image-status">
                 </div>
-              </label>
+                <p class="image-status" id="business-about-image-status" role="status" aria-live="polite"></p>
+              </div>
               <h3>Zahlen &amp; Fakten</h3>
               <div id="list-facts" class="list"></div>
               <button class="btn ghost add" type="button" data-add="facts">＋ Zahl hinzufügen</button>
@@ -816,6 +823,7 @@ export function renderBusinessBuilder(app) {
   let toastTimer
   let autoSaveTimer
   let checkoutPending = false
+  let editorDisabled = false
   let operatorValidationStarted = false
   const imageTasks = new Set()
   let storageWarningShown = false
@@ -840,8 +848,9 @@ export function renderBusinessBuilder(app) {
   }
 
   function setEditorDisabled(disabled) {
+    editorDisabled = disabled
     $$('.step-wrap input, .step-wrap textarea, .step-wrap select, .step-wrap button, #gallery-drop').forEach((element) => {
-      element.disabled = disabled
+      element.disabled = disabled || element.dataset.imageProcessing === 'true'
     })
     updateFulfillmentVisibility()
     saveButton.disabled = disabled || referenceError || !draftReconciled || serverStatus === 'locked'
@@ -1575,11 +1584,13 @@ export function renderBusinessBuilder(app) {
     const remove = document.createElement('button')
     remove.className = 'rm'
     remove.type = 'button'
+    remove.disabled = editorDisabled
     remove.textContent = '✕'
     remove.setAttribute('aria-label', 'Bild entfernen')
     remove.addEventListener('click', (event) => {
       event.stopPropagation()
       setValue(path, '')
+      $('.image-status', box.parentElement).textContent = ''
       renderSingle(box)
       changed()
     })
@@ -1618,9 +1629,12 @@ export function renderBusinessBuilder(app) {
 
   for (const box of $$('[data-img]')) {
     renderSingle(box)
-    wireDrop(box, async ([file]) => {
-      if (!file) return
-      try {
+    wireBusinessSingleImage({
+      box,
+      input: $('input[type=file]', box),
+      status: $('.image-status', box.parentElement),
+      isEditorDisabled: () => editorDisabled,
+      async onFile(file) {
         const path = box.dataset.img
         const value = await trackImageTask(
           processImage(file, Number(box.dataset.max) || 1400, path === 'logo', state, path),
@@ -1628,9 +1642,7 @@ export function renderBusinessBuilder(app) {
         setValue(path, value)
         renderSingle(box)
         changed()
-      } catch (error) {
-        toast(error.message)
-      }
+      },
     })
   }
 
@@ -2085,6 +2097,7 @@ export function renderBusinessBuilder(app) {
     Object.assign(state, cloneDefaults())
     bindFields()
     resetFulfillmentForm()
+    $$('.image-status').forEach((status) => { status.textContent = '' })
     SINGLE_IMAGE_PATHS.forEach((path) => renderSingle($(`[data-img="${path}"]`)))
     renderGallery()
     renderList('services')
