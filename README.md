@@ -120,5 +120,10 @@ Die Tests laufen offline; externe Dienste werden durch Fakes ersetzt. Sie decken
 Details und Hinweise (z. B. Rate Limiting) stehen in der [Architekturdokumentation](docs/ARCHITECTURE.md#umgebungsvariablen-und-deployment).
 
 ## Lizenz
+Der Quellcode von LeanWebsite Studio wird unter der [GNU Affero General Public License v3.0](LICENSE) veröffentlicht.
 
-Veröffentlicht unter der [GNU Affero General Public License v3.0](LICENSE). Copyright © 2026 Matthias Brehm.
+Für die mit den Buildern generierten und an Kunden ausgelieferten Websites gelten gesonderte Nutzungsrechte. Kunden dürfen ihre fertigen Websites frei verwenden, bearbeiten, veröffentlichen und kommerziell nutzen, ohne sie deshalb unter die AGPLv3 stellen zu müssen.
+
+Einzelheiten stehen in [LICENSING.md](LICENSING.md).
+
+Copyright © 2026 Matthias Brehm.
