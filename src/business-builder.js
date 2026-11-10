@@ -10,6 +10,8 @@ import {
 import { getPackagesForBuilder } from '../shared/packages.js'
 import { renderCheckoutReview } from '../shared/checkout-review.js'
 import { setupBusinessMobileView } from './business-mobile-view.js'
+import { wireBusinessSingleImage } from './business-single-image.js'
+import { encodeBusinessLogo, hasImageTransparency, imageByteLength, isImageDataUrl } from './business-image.js'
 import {
   BUSINESS_FULFILLMENT_PACKAGE_CODE,
   BusinessFulfillmentValidationError,
@@ -83,7 +85,6 @@ const PALETTES = [
 ]
 
 const SINGLE_IMAGE_PATHS = ['logo', 'hero.image', 'about.image']
-const IMAGE_DATA_URL = /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const DRAFT_TOKEN = /^[A-Za-z0-9_-]{43}$/
 
@@ -97,29 +98,11 @@ const SECTION_FIELDS = {
   operator: Object.keys(BUSINESS_OPERATOR_DEFAULTS),
 }
 
-function isImageDataUrl(value) {
-  if (value === '') return true
-  if (typeof value !== 'string' || !IMAGE_DATA_URL.test(value)) return false
-  const payload = value.slice(value.indexOf(',') + 1)
-  if (!payload.length || payload.length % 4 !== 0) return false
-  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
-  const last = payload.charCodeAt(payload.length - padding - 1)
-  const lastValue = last >= 65 && last <= 90 ? last - 65
-    : last >= 97 && last <= 122 ? last - 71
-      : last >= 48 && last <= 57 ? last + 4
-        : last === 43 ? 62
-          : last === 47 ? 63
-            : -1
-  return lastValue >= 0
-    && (padding !== 2 || lastValue % 16 === 0)
-    && (padding !== 1 || lastValue % 4 === 0)
-}
-
 function isBusinessDataStructure(value, { serverData = false } = {}) {
   if (!isObject(value)) return false
   const known = new Set([...Object.keys(SECTION_FIELDS), 'logo', 'services', 'facts', 'gallery'])
   if (Object.keys(value).some((key) => !known.has(key))) return false
-  if (value.logo !== undefined && !isImageDataUrl(value.logo)) return false
+  if (value.logo !== undefined && !isImageDataUrl(value.logo, { logo: true })) return false
 
   for (const [section, fields] of Object.entries(SECTION_FIELDS)) {
     const data = value[section]
@@ -130,7 +113,7 @@ function isBusinessDataStructure(value, { serverData = false } = {}) {
       if (section === 'operator' && (fieldValue.length > BUSINESS_OPERATOR_LIMITS[field]
         || INVALID_CONTROL_CHARACTERS.test(fieldValue)
         || (Object.hasOwn(BUSINESS_OPERATOR_CHOICES, field) && !BUSINESS_OPERATOR_CHOICES[field].includes(fieldValue)))) return false
-      if (field === 'image' && !isImageDataUrl(fieldValue)) return false
+      if (field === 'image' && !isImageDataUrl(fieldValue, { hero: section === 'hero' })) return false
     }
   }
 
@@ -247,7 +230,7 @@ function normalizeState(value) {
   const saved = isObject(value) ? value : {}
   const data = {
     company: mergeSection(DEFAULT_DATA.company, saved.company),
-    logo: typeof saved.logo === 'string' && IMAGE_DATA_URL.test(saved.logo) ? saved.logo : '',
+    logo: isImageDataUrl(saved.logo, { logo: true }) ? saved.logo : '',
     hero: mergeSection(DEFAULT_DATA.hero, saved.hero),
     services: Array.isArray(saved.services)
       ? saved.services.filter(isObject).map((item) => ({
@@ -264,7 +247,7 @@ function normalizeState(value) {
         }))
       : [],
     gallery: Array.isArray(saved.gallery)
-      ? saved.gallery.filter((image) => typeof image === 'string' && IMAGE_DATA_URL.test(image))
+      ? saved.gallery.filter((image) => image && isImageDataUrl(image))
       : [],
     contact: mergeSection(DEFAULT_DATA.contact, saved.contact),
     design: mergeSection(DEFAULT_DATA.design, saved.design),
@@ -274,7 +257,7 @@ function normalizeState(value) {
 
   for (const path of ['hero.image', 'about.image']) {
     const [section, key] = path.split('.')
-    if (!IMAGE_DATA_URL.test(data[section][key])) data[section][key] = ''
+    if (!isImageDataUrl(data[section][key], { hero: section === 'hero' })) data[section][key] = ''
   }
 
   return data
@@ -324,25 +307,6 @@ function loadGsap() {
   })
 
   return window.businessGsapPromise
-}
-
-function imageByteLength(value) {
-  const match = typeof value === 'string' && IMAGE_DATA_URL.exec(value)
-  if (!match) return null
-  const payload = value.slice(value.indexOf(',') + 1)
-  if (payload.length % 4 !== 0) return null
-  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
-  const last = payload.charCodeAt(payload.length - padding - 1)
-  const lastValue = last >= 65 && last <= 90 ? last - 65
-    : last >= 97 && last <= 122 ? last - 71
-      : last >= 48 && last <= 57 ? last + 4
-        : last === 43 ? 62
-          : last === 47 ? 63
-            : -1
-  if (lastValue < 0 || (padding === 2 && lastValue % 16 !== 0) || (padding === 1 && lastValue % 4 !== 0)) {
-    return null
-  }
-  return Math.floor(payload.length * 3 / 4) - padding
 }
 
 function draftRequestBytes(data) {
@@ -436,7 +400,7 @@ function validationWarnings(data) {
   if (!['4', '16', '28'].includes(data.design.radius)) warnings.push('Bitte eine der vorhandenen Rundungsoptionen auswählen.')
 
   for (const [label, image] of imageEntries(data)) {
-    const bytes = imageByteLength(image)
+    const bytes = imageByteLength(image, { logo: label === 'Logo', hero: label === 'Titelbild' })
     if (image && bytes === null) warnings.push(`${label}: ungültiges Bildformat.`)
     else if (bytes > MAX_IMAGE_BYTES) warnings.push(`${label}: maximal 1,5 MiB Bildgröße.`)
   }
@@ -483,11 +447,13 @@ export function renderBusinessBuilder(app) {
               <label>Firmenname *<input data-bind="company.name" maxlength="100" placeholder="z. B. Müller Fahrradwerkstatt"></label>
               <label>Slogan<input data-bind="company.tagline" maxlength="180" placeholder="z. B. Dein Bike. Unsere Leidenschaft."></label>
               <label>Branche<input data-bind="company.industry" maxlength="120" placeholder="z. B. Fahrrad-Service"></label>
-              <label>Logo (optional)
-                <div class="drop" data-img="logo" data-max="500" tabindex="0" role="button" aria-label="Logo auswählen oder hier ablegen">
-                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input type="file" accept="image/*" hidden>
+              <div class="image-field">
+                <label for="business-logo">Logo (optional)</label>
+                <div class="drop" data-img="logo" data-max="500">
+                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-logo" type="file" accept="image/*" aria-label="Logo auswählen oder hier ablegen" aria-describedby="business-logo-status">
                 </div>
-              </label>
+                <p class="image-status" id="business-logo-status" role="status" aria-live="polite"></p>
+              </div>
             </div>
 
             <div class="step" data-step="Start">
@@ -499,11 +465,22 @@ export function renderBusinessBuilder(app) {
                 <label>Button-Text<input data-bind="hero.cta" maxlength="100" placeholder="Jetzt anfragen"></label>
                 <label>Badge (optional)<input data-bind="hero.badge" maxlength="120" placeholder="Seit 2009 in Berlin"></label>
               </div>
-              <label>Titelbild
-                <div class="drop" data-img="hero.image" data-max="1800" tabindex="0" role="button" aria-label="Titelbild auswählen oder hier ablegen">
-                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input type="file" accept="image/*" hidden>
+              <div class="image-field">
+                <label for="business-hero-image">Titelbild</label>
+                <div class="drop" data-img="hero.image" data-max="1800">
+                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-hero-image" type="file" accept="image/*" aria-label="Titelbild auswählen oder hier ablegen" aria-describedby="business-hero-image-status">
                 </div>
-              </label>
+                <p class="image-status" id="business-hero-image-status" role="status" aria-live="polite"></p>
+                <details class="hero-image-help">
+                  <summary>Tipps für dein Titelbild</summary>
+                  <div>
+                    <p>Verwende möglichst ein hochauflösendes Querformat, beispielsweise 1920 × 1080 Pixel. Platziere wichtige Motive möglichst mittig und lasse ausreichend Abstand zu den Bildrändern.</p>
+                    <p>Je nach Bildschirmgröße kann sich der sichtbare Bildausschnitt verändern.</p>
+                    <p>Tipp: Verkleinere dein Browserfenster am Computer, um unterschiedliche Bildschirmbreiten zu prüfen. Alternativ kannst du die Darstellung auf deinem Smartphone kontrollieren.</p>
+                    <p>Bearbeite und bestelle deine Website möglichst auf demselben Gerät, damit dein gespeicherter Entwurf eindeutig zugeordnet bleibt.</p>
+                  </div>
+                </details>
+              </div>
             </div>
 
             <div class="step" data-step="Leistungen">
@@ -518,11 +495,13 @@ export function renderBusinessBuilder(app) {
               <p class="hint">Erzählt eure Geschichte und nennt ein paar Zahlen.</p>
               <label>Titel<input data-bind="about.title" maxlength="120" placeholder="Handwerk mit Herz"></label>
               <label>Text<textarea rows="5" maxlength="5000" data-bind="about.text" placeholder="Wer seid ihr, wofür steht ihr?"></textarea></label>
-              <label>Bild
-                <div class="drop" data-img="about.image" data-max="1400" tabindex="0" role="button" aria-label="Bild auswählen oder hier ablegen">
-                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input type="file" accept="image/*" hidden>
+              <div class="image-field">
+                <label for="business-about-image">Bild</label>
+                <div class="drop" data-img="about.image" data-max="1400">
+                  <span data-drop-label>Bild hierher ziehen oder klicken</span><input id="business-about-image" type="file" accept="image/*" aria-label="Über-uns-Bild auswählen oder hier ablegen" aria-describedby="business-about-image-status">
                 </div>
-              </label>
+                <p class="image-status" id="business-about-image-status" role="status" aria-live="polite"></p>
+              </div>
               <h3>Zahlen &amp; Fakten</h3>
               <div id="list-facts" class="list"></div>
               <button class="btn ghost add" type="button" data-add="facts">＋ Zahl hinzufügen</button>
@@ -816,6 +795,7 @@ export function renderBusinessBuilder(app) {
   let toastTimer
   let autoSaveTimer
   let checkoutPending = false
+  let editorDisabled = false
   let operatorValidationStarted = false
   const imageTasks = new Set()
   let storageWarningShown = false
@@ -840,8 +820,9 @@ export function renderBusinessBuilder(app) {
   }
 
   function setEditorDisabled(disabled) {
+    editorDisabled = disabled
     $$('.step-wrap input, .step-wrap textarea, .step-wrap select, .step-wrap button, #gallery-drop').forEach((element) => {
-      element.disabled = disabled
+      element.disabled = disabled || element.dataset.imageProcessing === 'true'
     })
     updateFulfillmentVisibility()
     saveButton.disabled = disabled || referenceError || !draftReconciled || serverStatus === 'locked'
@@ -1510,8 +1491,9 @@ export function renderBusinessBuilder(app) {
       image.onload = () => {
         URL.revokeObjectURL(url)
         try {
-          const scale = Math.min(1, maxDimension / Math.max(image.width, image.height))
           const canvas = document.createElement('canvas')
+          const preserveAlpha = keepAlpha || (path === 'hero.image' && hasImageTransparency(image, canvas))
+          const scale = Math.min(1, maxDimension / Math.max(image.width, image.height))
           canvas.width = Math.max(1, Math.round(image.width * scale))
           canvas.height = Math.max(1, Math.round(image.height * scale))
           const context = canvas.getContext('2d')
@@ -1519,11 +1501,19 @@ export function renderBusinessBuilder(app) {
             reject(new Error('Die Bildverarbeitung ist in diesem Browser nicht verfügbar.'))
             return
           }
-          if (!keepAlpha) {
+          if (!preserveAlpha) {
             context.fillStyle = '#fff'
             context.fillRect(0, 0, canvas.width, canvas.height)
           }
           context.drawImage(image, 0, 0, canvas.width, canvas.height)
+          if (preserveAlpha) {
+            resolve(encodeBusinessLogo(canvas, image, {
+              maxImageBytes: MAX_IMAGE_BYTES,
+              fitsDraft: (value) => draftRequestBytes(withImage(data, path, value)) <= MAX_DRAFT_REQUEST_BYTES,
+              ...(path === 'hero.image' && { label: 'Titelbild' }),
+            }))
+            return
+          }
           const format = keepAlpha ? 'image/webp' : 'image/jpeg'
           const qualities = keepAlpha ? [0.9, 0.82, 0.72, 0.62] : [0.82, 0.74, 0.66, 0.58]
           let lastIssue = 'image'
@@ -1549,8 +1539,8 @@ export function renderBusinessBuilder(app) {
           reject(new Error(lastIssue === 'image'
             ? 'Das Bild ist auch nach zusätzlicher Komprimierung größer als 1,5 MiB. Bitte wähle ein kleineres Bild.'
             : 'Das Bild passt auch nach zusätzlicher Komprimierung nicht in das Draft-Limit von 4 MiB. Entferne oder verkleinere zuerst andere Bilder.'))
-        } catch {
-          reject(new Error('Bild konnte nicht verarbeitet werden.'))
+        } catch (error) {
+          reject((keepAlpha || path === 'hero.image') && error instanceof Error ? error : new Error('Bild konnte nicht verarbeitet werden.'))
         }
       }
       image.onerror = () => {
@@ -1575,11 +1565,13 @@ export function renderBusinessBuilder(app) {
     const remove = document.createElement('button')
     remove.className = 'rm'
     remove.type = 'button'
+    remove.disabled = editorDisabled
     remove.textContent = '✕'
     remove.setAttribute('aria-label', 'Bild entfernen')
     remove.addEventListener('click', (event) => {
       event.stopPropagation()
       setValue(path, '')
+      $('.image-status', box.parentElement).textContent = ''
       renderSingle(box)
       changed()
     })
@@ -1618,9 +1610,12 @@ export function renderBusinessBuilder(app) {
 
   for (const box of $$('[data-img]')) {
     renderSingle(box)
-    wireDrop(box, async ([file]) => {
-      if (!file) return
-      try {
+    wireBusinessSingleImage({
+      box,
+      input: $('input[type=file]', box),
+      status: $('.image-status', box.parentElement),
+      isEditorDisabled: () => editorDisabled,
+      async onFile(file) {
         const path = box.dataset.img
         const value = await trackImageTask(
           processImage(file, Number(box.dataset.max) || 1400, path === 'logo', state, path),
@@ -1628,9 +1623,7 @@ export function renderBusinessBuilder(app) {
         setValue(path, value)
         renderSingle(box)
         changed()
-      } catch (error) {
-        toast(error.message)
-      }
+      },
     })
   }
 
@@ -2085,6 +2078,7 @@ export function renderBusinessBuilder(app) {
     Object.assign(state, cloneDefaults())
     bindFields()
     resetFulfillmentForm()
+    $$('.image-status').forEach((status) => { status.textContent = '' })
     SINGLE_IMAGE_PATHS.forEach((path) => renderSingle($(`[data-img="${path}"]`)))
     renderGallery()
     renderList('services')
