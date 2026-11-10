@@ -11,7 +11,7 @@ Die vollständigen Lizenzbedingungen befinden sich in der Datei [LICENSE](LICENS
 Die Bezeichnungen `leanwebsite` (Repository) und `LeanWebsite Studio` (Produkt) beziehen sich auf dasselbe Softwareprojekt.
 
 ## 2. Gesonderte Lizenz für generierte Websites
-Für die von LeanWebsite Studio generierten und Kunden im Rahmen einer ordnungsgemäß abgeschlossenen Bestellung bereitgestellten HTML-Websites gewährt Matthias Brehm den jeweiligen Kunden ein einfaches (nicht ausschließliches), zeitlich unbefristetes, weltweites und unentgeltlich weiter nutzbares Recht, die von Matthias Brehm stammenden Bestandteile der generierten Website zu:
+Für die HTML-Websites, die mit LeanWebsite Studio generiert und den Kunden nach ordnungsgemäß abgeschlossenem Bestellvorgang bereitgestellt werden, gewährt Matthias Brehm den jeweiligen Kunden ein einfaches (nicht ausschließliches), zeitlich unbefristetes, weltweites und unentgeltlich weiter nutzbares Recht, die von Matthias Brehm stammenden Bestandteile der generierten Website zu:
 
 - verwenden und ausführen,
 - speichern und vervielfältigen,

@@ -92,6 +92,7 @@ app.innerHTML = `
       <a href="/datenschutz">Datenschutzerklärung</a>
       <a href="/widerruf">Widerruf</a>
       <a href="https://matthiasbrehm.de/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
+      <a href="https://github.com/dubposse/leanwebsite/blob/main/LICENSING.md" target="_blank" rel="noopener noreferrer">Lizenz</a>
     </nav>
   </footer>
 `
